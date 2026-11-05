@@ -104,12 +104,14 @@ export default function KarachiRushGame() {
   const [totalLaps, setTotalLaps] = useState<number>(3);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [setupOpen, setSetupOpen] = useState<boolean>(false);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [menuTimeMode, setMenuTimeMode] = useState<TimeMode>("day");
   const [phase, setPhase] = useState<Phase>("menu");
   const [loading, setLoading] = useState(true);
   const [loadingVisible, setLoadingVisible] = useState(true);
   const [countdownNum, setCountdownNum] = useState<number | string>(3);
   const [driftPopup, setDriftPopup] = useState<{ text: string; id: number } | null>(null);
+  const [wrongWay, setWrongWay] = useState<boolean>(false);
   const [lapBanner, setLapBanner] = useState<{ district: string; tagline: string; lap: number; coins: number; traps: number; time: number } | null>(null);
   const [finalStats, setFinalStats] = useState<{
     rankings: { rank: number; name: string; time: number }[];
@@ -355,6 +357,8 @@ export default function KarachiRushGame() {
 
     let playerU = 0.0;
     let playerSpeed = 0.0;
+    let wrongWayNow = false;
+    let prevPlayerU = 0.0;
     let playerLateral = 0.0;
     let playerSteerAngle = 0.0;
     let playerNitro = 100.0;
@@ -1179,6 +1183,7 @@ export default function KarachiRushGame() {
         countdownInterval = null;
         clearRaceObjects();
         setPhaseState("menu");
+        setWrongWay(false);
       },
     };
 
@@ -1626,6 +1631,12 @@ export default function KarachiRushGame() {
         }
 
       // 7. lap detection
+      const uDelta = playerU - prevPlayerU;
+      if (isRacing) {
+        const nowWrong = uDelta < -0.02 && playerSpeed > 5;
+        if (nowWrong !== wrongWayNow) { wrongWayNow = nowWrong; setWrongWay(nowWrong); }
+      }
+      prevPlayerU = playerU;
       if (isRacing && lapReady && playerU < 0.03 && distanceMoved > 0) {
         lapReady = false;
         completeLap();
@@ -1824,6 +1835,7 @@ export default function KarachiRushGame() {
 
           {/* autorush-style HUD chrome */}
           <canvas id="minimap" className="minimap" width={190} height={190} ref={minimapRef} />
+          {wrongWay && <div className="wrong-way">WRONG WAY!</div>}
         </div>
       )}
 
@@ -1936,6 +1948,9 @@ export default function KarachiRushGame() {
               <button className="btn sec-btn setup-btn" onClick={() => setSetupOpen(true)}>
                 Race setup
               </button>
+              <button className="btn sec-btn setup-btn" onClick={() => setSettingsOpen(true)}>
+                Settings
+              </button>
             </div>
 
             <div className="controls-hint">
@@ -1989,6 +2004,27 @@ export default function KarachiRushGame() {
               ))}
             </div>
             <button className="action-btn" onClick={() => setSetupOpen(false)}>DONE</button>
+          </div>
+        </div>
+      )}
+
+      {/* Settings */}
+      {phase === "menu" && settingsOpen && (
+        <div className="screen-overlay" onClick={() => setSettingsOpen(false)}>
+          <div className="modal-panel panel-slim" onClick={(e) => e.stopPropagation()}>
+            <div className="game-title" style={{ fontSize: 28 }}>SETTINGS</div>
+            <div className="game-subtitle">Sound & controls</div>
+            <div className="section-label">SOUND</div>
+            <button className="action-btn secondary" onClick={() => setSoundEnabled((v) => !v)}>
+              {soundEnabled ? "🔊 SOUND ON" : "🔇 MUTED"}
+            </button>
+            <div className="section-label">CONTROLS</div>
+            <div className="controls-hint" style={{ textAlign: "left", lineHeight: 1.6 }}>
+              W/↑ THROTTLE • S/↓ BRAKE • A/D STEER<br />
+              SPACE DRIFT • N NITRO • P / ESC PAUSE<br />
+              CYCLE TIME: button in HUD
+            </div>
+            <button className="action-btn" onClick={() => setSettingsOpen(false)}>DONE</button>
           </div>
         </div>
       )}
