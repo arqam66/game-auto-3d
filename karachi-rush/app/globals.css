@@ -602,6 +602,8 @@ html, body {
   border-color: var(--line);
   color: #77777f;
   cursor: not-allowed;
+  opacity: 0.6;
+  filter: grayscale(0.5);
 }
 
 .owned-tag {
@@ -1035,7 +1037,13 @@ html, body {
   }
 }
 
-/* --- buttons press into their own shadow -------------------- */
+.action-btn:focus-visible,
+.icon-btn:focus-visible,
+.arrow:focus-visible,
+.buy-btn:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
 .action-btn,
 .icon-btn {
   transition: transform 90ms ease, box-shadow 90ms ease, background 120ms ease;
@@ -1435,6 +1443,38 @@ html, body {
 
 .wrong-way:not(.hidden) { display: block; }
 
-@media (width <= 760px) {
+.minimap {
+  position: absolute;
   .minimap { top: 70px; right: 8px; width: 120px; height: 120px; }
 }
+/* --- premium micro-states (ui-ux-pro-max) ------------------- */
+.select-card {
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.select-card:hover:not(.locked) {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.55);
+  border-color: var(--yellow);
+}
+
+.select-card.active {
+  border-color: var(--yellow);
+  box-shadow: var(--shadow-hard);
+}
+
+.icon-btn,
+.arrow,
+.buy-btn {
+  transition: transform 90ms ease, box-shadow 90ms ease, background 120ms ease, filter 120ms ease;
+}
+
+.icon-btn:active,
+.arrow:active,
+.buy-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+.bank-pill { transition: transform 120ms ease; }
+.bank-pill:hover { transform: translate(-1px, -1px); }
