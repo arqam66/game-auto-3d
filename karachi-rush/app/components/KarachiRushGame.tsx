@@ -384,6 +384,7 @@ export default function KarachiRushGame() {
     }
     const rivals: AIRivalInstance[] = [];
     const rivalTagMeshes: THREE.Mesh[] = [];
+    const windowMats: THREE.MeshStandardMaterial[] = [];
     const obstacles: Obstacle[] = [];
     const coinRows: CoinRow[] = [];
     const lapSummaries: LapSummary[] = [];
@@ -782,7 +783,21 @@ export default function KarachiRushGame() {
         scene.add(dash);
       }
 
-      // Start / finish gantry
+      // Edge lines (solid white, just inside curbs)
+      for (const side of [1, -1]) {
+        const pts: number[] = [];
+        for (let i = 0; i <= segments; i++) {
+          const u = i / segments;
+          const { pt, normal } = splineFrame(u);
+          const x = pt.x + normal.x * side * (halfW - 0.9);
+          const z = pt.z + normal.z * side * (halfW - 0.9);
+          pts.push(x, pt.y + 0.09, z);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+        const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xf2f0e8 }));
+        scene.add(line);
+      }
       const { pt, tangent } = splineFrame(0);
       const gantry = new THREE.Group();
       gantry.position.copy(pt);
@@ -837,6 +852,7 @@ export default function KarachiRushGame() {
         // window strip for glass buildings
         if (i % 3 === 1) {
           const winMat = new THREE.MeshStandardMaterial({ color: 0xf2b632, emissive: 0xf2b632, emissiveIntensity: 0.35, transparent: true, opacity: 0.6 });
+          windowMats.push(winMat);
           const win = new THREE.Mesh(new THREE.PlaneGeometry(bw * 0.85, bh * 0.7), winMat);
           win.position.set(pt.x + normal.x * side * (dist - bd / 2 - 0.5), bh / 2, pt.z + normal.z * side * (dist - bd / 2 - 0.5));
           win.lookAt(new THREE.Vector3(pt.x, bh / 2, pt.z));
@@ -848,6 +864,22 @@ export default function KarachiRushGame() {
           lampPost.position.set(pt.x + normal.x * side * dk, 5, pt.z + normal.z * side * dk);
           scene.add(lampPost);
         }
+      }
+
+      // far skyline ring (fills the horizon, no shadows)
+      const rng2 = mulberry32(9091);
+      const skyMat = new THREE.MeshStandardMaterial({ color: 0x57607a, roughness: 1, metalness: 0 });
+      for (let i = 0; i < 26; i++) {
+        const u = (i / 26 + rng2() * 0.1) % 1.0;
+        const { pt, normal } = splineFrame(u);
+        const side = i % 2 === 0 ? 1 : -1;
+        const dist = TRACK.roadWidth * 0.6 + 160 + rng2() * 220;
+        const bw = 60 + rng2() * 80;
+        const bd = 60 + rng2() * 80;
+        const bh = 90 + rng2() * 170;
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), skyMat);
+        mesh.position.set(pt.x + normal.x * side * dist, bh / 2, pt.z + normal.z * side * dist);
+        scene.add(mesh);
       }
     }
 
@@ -1032,9 +1064,9 @@ export default function KarachiRushGame() {
       if (mode === "day") {
         scene.background = new THREE.Color(TRACK.daySky);
         scene.fog = new THREE.FogExp2(TRACK.daySky, 0.0018);
-        ambientLight.intensity = 0.85;
+        ambientLight.intensity = 0.95;
         ambientLight.color.set(TRACK.ambientDay);
-        dirLight.intensity = 1.4;
+        dirLight.intensity = 1.6;
         dirLight.color.set(0xffffff);
         headLight.intensity = 0;
       } else if (mode === "sunset") {
@@ -1054,6 +1086,8 @@ export default function KarachiRushGame() {
         dirLight.color.set(0x8fa4d2);
         headLight.intensity = 3.5;
       }
+      const winInt = mode === "night" ? 0.9 : mode === "sunset" ? 0.55 : 0.35;
+      for (const m of windowMats) m.emissiveIntensity = winInt;
     }
     applyTimeMode("day");
 
@@ -1420,10 +1454,11 @@ export default function KarachiRushGame() {
         const targetCamPos = new THREE.Vector3()
           .copy(playerPos)
           .addScaledVector(playerTangent, -camFollowDist)
-          .add(new THREE.Vector3(0, 4.8, 0));
+          .add(new THREE.Vector3(0, 5.2, 0));
         camera.position.lerp(targetCamPos, 0.12);
       }
-      camera.lookAt(new THREE.Vector3(playerPos.x, playerPos.y + 1.8, playerPos.z));
+      const lookY = isMenuIdle ? 2.2 : 2.0;
+      camera.lookAt(new THREE.Vector3(playerPos.x, playerPos.y + lookY, playerPos.z));
       const targetFov = isMenuIdle ? 50 : 60 + (playerSpeed / 60) * 15 + (ctrl.nitro && playerNitro > 1 ? 8 : 0);
       camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1);
       camera.updateProjectionMatrix();
@@ -1774,11 +1809,6 @@ export default function KarachiRushGame() {
 
           {/* autorush-style HUD chrome */}
           <canvas id="minimap" className="minimap" width={190} height={190} ref={minimapRef} />
-          <div className="name-tags" id="nameTags" />
-          <div className="drift-tag" id="driftTag" aria-hidden="true">
-            <b id="driftNum">0</b><span id="driftWord">M DRIFT</span>
-          </div>
-          <div className="wrong-way" id="wrongWay">WRONG WAY!</div>
         </div>
       )}
 
@@ -1816,34 +1846,6 @@ export default function KarachiRushGame() {
                 const prev = VEHICLES[(idx - 1 + VEHICLES.length) % VEHICLES.length];
                 if (prev.price === 0 || unlocked.includes(prev.id)) setSelectedVehicle(prev.id);
               }}>‹</button>
-              <div className="selection-grid garage-grid" style={{ flex: 1 }}>
-                {VEHICLES.map((v, i) => {
-                  const isOwned = v.price === 0 || unlocked.includes(v.id);
-                  const isActive = selectedVehicle === v.id;
-                  if (!isActive) return null;
-                  return (
-                    <div
-                      key={v.id}
-                      className={`select-card ${isActive ? "active" : ""} ${isOwned ? "" : "locked"}`}
-                      style={{ "--i": i } as CSSProperties}
-                    >
-                      <div className="select-card-name">{v.name}</div>
-                      <div className="select-card-desc">{v.subtitle}</div>
-                      <div className="select-card-stats">TOP {v.topSpeed} KM/H</div>
-                      {!isOwned ? (
-                        <button
-                          className={`buy-btn ${bank >= v.price ? "" : "buy-btn-disabled"}`}
-                          onClick={(e) => { e.stopPropagation(); buyVehicle(v.id); }}
-                        >
-                          BUY {v.price}
-                        </button>
-                      ) : (
-                        <div className="owned-tag">EQUIPPED</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
               <button className="arrow" aria-label="Next rickshaw" onClick={() => {
                 const idx = VEHICLES.findIndex((v) => v.id === selectedVehicle);
                 const next = VEHICLES[(idx + 1) % VEHICLES.length];
