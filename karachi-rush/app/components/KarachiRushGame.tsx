@@ -1322,6 +1322,7 @@ export default function KarachiRushGame() {
       if (e.code === "Space" || e.code === "ShiftLeft" || e.code === "ShiftRight") c.drift = true;
       if (e.code === "KeyN" || e.code === "ControlLeft") c.nitro = true;
       if (e.code === "KeyP") engineRef.current?.togglePause();
+      if (e.code === "Escape") engineRef.current?.togglePause();
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const c = controlsRef.current;
