@@ -102,6 +102,8 @@ export default function KarachiRushGame() {
   const [totalLaps, setTotalLaps] = useState<number>(3);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [phase, setPhase] = useState<Phase>("menu");
+  const [loading, setLoading] = useState(true);
+  const [loadingVisible, setLoadingVisible] = useState(true);
   const [countdownNum, setCountdownNum] = useState<number | string>(3);
   const [driftPopup, setDriftPopup] = useState<{ text: string; id: number } | null>(null);
   const [lapBanner, setLapBanner] = useState<{ district: string; tagline: string; lap: number; coins: number; traps: number; time: number } | null>(null);
@@ -1550,7 +1552,13 @@ export default function KarachiRushGame() {
     };
     window.addEventListener("resize", onResize);
 
+    const loadTimer = setTimeout(() => {
+      setLoading(false);
+      setTimeout(() => setLoadingVisible(false), 450);
+    }, 1400);
+
     return () => {
+      clearTimeout(loadTimer);
       disposed = true;
       cancelAnimationFrame(animId);
       window.removeEventListener("keydown", onKeyDown);
@@ -1586,6 +1594,21 @@ export default function KarachiRushGame() {
 
   return (
     <div id="game-container">
+      {loadingVisible && (
+        <div className={`loading-screen ${loading ? "" : "loading-screen--out"}`}>
+          <div className="loading-title">KARACHI RUSH</div>
+          <div className="loading-subtitle">SADAR — II CHUNDRIGAR — CLIFTON</div>
+          <div className="loading-bar">
+            <div className="loading-bar-fill" />
+          </div>
+          <div className="loading-msg">LOADING DISTRICTS…</div>
+          <div className="loading-dots">
+            <span className="coin-dot" />
+            <span className="coin-dot" />
+            <span className="coin-dot" />
+          </div>
+        </div>
+      )}
       <div id="viewport" ref={viewportRef} />
 
       {/* HUD */}
