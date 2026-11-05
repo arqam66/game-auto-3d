@@ -56,6 +56,7 @@ interface HudView {
   position: number;
   lap: number;
   lapTime: number;
+  bestLap: number | null;
   score: number;
   speed: number;
   nitro: number;
@@ -124,7 +125,7 @@ export default function KarachiRushGame() {
     laps: LapSummary[];
   } | null>(null);
   const [hud, setHud] = useState<HudView>({
-    position: 1, lap: 1, lapTime: 0, score: 0, speed: 0, nitro: 100,
+    position: 1, lap: 1, lapTime: 0, bestLap: null, score: 0, speed: 0, nitro: 100,
     runCoins: 0, bank: 0, steps: 0, distanceM: 0, trapsDodged: 0, crashes: 0,
     difficulty: "medium", timeMode: "day",
   });
@@ -1499,6 +1500,15 @@ export default function KarachiRushGame() {
           });
           mctx.closePath();
           mctx.stroke();
+          // rival dots
+          for (const rv of rivals) {
+            const ru = ((rv.u % 1) + 1) % 1;
+            const rp = spline.getPointAt(Math.min(0.999, ru));
+            mctx.fillStyle = "#d90429";
+            mctx.beginPath();
+            mctx.arc(rp.x * s + ox, rp.z * s + oz, 2.5, 0, Math.PI * 2);
+            mctx.fill();
+          }
           // player dot
           const pp = spline.getPointAt(Math.min(0.999, playerU));
           mctx.fillStyle = "#f2b632";
@@ -1631,6 +1641,7 @@ export default function KarachiRushGame() {
           position: positionRank,
           lap: Math.min(playerLap, totalLapsRef.current),
           lapTime: (performance.now() - lapStartWall) / 1000 || 0,
+          bestLap: bestLapSec,
           score: totalScore,
           speed: Math.max(0, Math.round(playerSpeed)),
           nitro: Math.round(playerNitro),
@@ -1659,6 +1670,8 @@ export default function KarachiRushGame() {
       renderer.setSize(w, h);
     };
     window.addEventListener("resize", onResize);
+    const onBlur = () => { if (manPhase === "racing") engineRef.current?.togglePause(); };
+    window.addEventListener("blur", onBlur);
 
     const loadTimer = setTimeout(() => {
       setLoading(false);
@@ -1672,6 +1685,7 @@ export default function KarachiRushGame() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("blur", onBlur);
       if (renderer) {
         scene.traverse((obj) => {
           if (obj instanceof THREE.Mesh) {
@@ -1733,7 +1747,7 @@ export default function KarachiRushGame() {
                 <span className="chip-district">
                   LAP {hud.lap}/{totalLaps} — {DISTRICTS[Math.min(hud.lap - 1, 2)].name}
                 </span>
-                <span className="chip-time">{fmtTime(hud.lapTime)}</span>
+                <span className="chip-time">{fmtTime(hud.lapTime)}{hud.bestLap ? `  •  BEST ${fmtTime(hud.bestLap)}` : ""}</span>
               </div>
 
               <div className="chip-row">
