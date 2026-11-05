@@ -684,9 +684,9 @@ export default function KarachiRushGame() {
       viewport.innerHTML = "";
       viewport.appendChild(renderer.domElement);
 
-      ambientLight = new THREE.AmbientLight(TRACK.ambientDay, 0.85);
+      ambientLight = new THREE.AmbientLight(TRACK.ambientDay, 0.95);
       scene.add(ambientLight);
-      dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+      dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
       dirLight.position.set(200, 400, 150);
       dirLight.castShadow = true;
       dirLight.shadow.mapSize.width = 2048;
@@ -769,6 +769,19 @@ export default function KarachiRushGame() {
         scene.add(curb);
       }
 
+      // Center dashed lane marking
+      const dashMat = new THREE.MeshStandardMaterial({ color: 0xf2f0e8, emissive: 0x222222, emissiveIntensity: 0.1 });
+      const dashGeo = new THREE.BoxGeometry(0.4, 0.08, 4.5);
+      for (let i = 0; i < segments; i += 3) {
+        const u = i / segments;
+        const { pt, tangent } = splineFrame(u);
+        const dash = new THREE.Mesh(dashGeo, dashMat);
+        dash.position.copy(pt);
+        dash.position.y += 0.12;
+        dash.lookAt(new THREE.Vector3().copy(pt).add(tangent));
+        scene.add(dash);
+      }
+
       // Start / finish gantry
       const { pt, tangent } = splineFrame(0);
       const gantry = new THREE.Group();
@@ -806,19 +819,29 @@ export default function KarachiRushGame() {
       const rng = mulberry32(7021);
       const bldgMatDay = new THREE.MeshStandardMaterial({ color: 0x8d99ae, roughness: 0.85 });
       const bldgMatGlass = new THREE.MeshStandardMaterial({ color: 0x2b2d42, roughness: 0.3, metalness: 0.8 });
-      for (let i = 0; i < 55; i++) {
-        const u = (i / 55 + rng() * 0.05) % 1.0;
+      const bldgMatBrick = new THREE.MeshStandardMaterial({ color: 0x7a5a4a, roughness: 0.9 });
+      const mats = [bldgMatDay, bldgMatGlass, bldgMatBrick];
+      for (let i = 0; i < 90; i++) {
+        const u = (i / 90 + rng() * 0.05) % 1.0;
         const { pt, normal } = splineFrame(u);
         const side = i % 2 === 0 ? 1 : -1;
-        const dist = TRACK.roadWidth * 0.6 + 24 + rng() * 90;
-        const bw = 25 + rng() * 35;
-        const bd = 25 + rng() * 35;
-        const bh = 50 + rng() * 120;
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), i % 3 === 0 ? bldgMatGlass : bldgMatDay);
+        const dist = TRACK.roadWidth * 0.6 + 18 + rng() * 70;
+        const bw = 20 + rng() * 30;
+        const bd = 20 + rng() * 30;
+        const bh = 60 + rng() * 160;
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mats[i % 3]);
         mesh.position.set(pt.x + normal.x * side * dist, bh / 2, pt.z + normal.z * side * dist);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         scene.add(mesh);
+        // window strip for glass buildings
+        if (i % 3 === 1) {
+          const winMat = new THREE.MeshStandardMaterial({ color: 0xf2b632, emissive: 0xf2b632, emissiveIntensity: 0.35, transparent: true, opacity: 0.6 });
+          const win = new THREE.Mesh(new THREE.PlaneGeometry(bw * 0.85, bh * 0.7), winMat);
+          win.position.set(pt.x + normal.x * side * (dist - bd / 2 - 0.5), bh / 2, pt.z + normal.z * side * (dist - bd / 2 - 0.5));
+          win.lookAt(new THREE.Vector3(pt.x, bh / 2, pt.z));
+          scene.add(win);
+        }
         if (i % 2 === 0) {
           const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 10, 8), new THREE.MeshStandardMaterial({ color: 0x444444 }));
           const dk = TRACK.roadWidth / 2 + 2;
