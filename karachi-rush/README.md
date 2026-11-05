@@ -1,58 +1,61 @@
-# Auto Rush: Karachi Grand Prix 🛺
+# 🛺 Auto Rush: Karachi Grand Prix 3D
+### An Arcade 3D Auto Rickshaw Endless Runner Powered by Next.js & Three.js
 
-The **Karachi version of Auto Rush** — reverse-engineered from [autorush.autos](https://autorush.autos) and rebuilt as a proper **Next.js** (App Router) game powered by **Three.js**.
+[![Next.js](https://img.shields.io/badge/Next.js-16.4.5-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.3.0-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
+[![Three.js](https://img.shields.io/badge/Three.js-0.160.0-black?style=for-the-badge&logo=threedotjs)](https://threejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
+[![Playwright](https://img.shields.io/badge/Playwright-E2E_Verified-2EAD33?style=for-the-badge&logo=playwright)](https://playwright.dev/)
 
-Play it at **<http://localhost:3000>**.
+Play it directly at **<http://localhost:3000>**.
 
-## What's in this repo
+---
 
-- `app/page.tsx` — the game route.
-- `app/components/KarachiRushGame.tsx` — the full game (Three.js scene, physics, HUD, overlays).
-- `app/globals.css` — game styling.
-- `app/layout.tsx` — root layout / metadata.
+## 🗺️ Maps & Race Environments
 
-## Features
+| Map / Environment | Mode / Setting | Description |
+|---|---|---|
+| **🏙️ M.A. Jinnah Expressway** | Day Mode (Standard) | High-noon race flanked by iconic Karachi architectural high-rises and the landmark telecom skyscraper tower. |
+| **🌃 Karachi Night Grand Prix** | Night Mode (`N` Toggle) | Midnight street racing under moody blue-indigo skies with dynamic atmospheric depth fog and glowing headlights. |
+| **⚡ Saddar Rush Hour Circuit** | Hard Difficulty | Minimal vehicle spacing ($300\text{ units}$), fast speed ramp-up ($8.5\times$), extreme traffic density. |
+| **🌊 Clifton Coastal Boulevard** | Easy Difficulty | Relaxed cruising with generous obstacle spacing ($420\text{ units}$) and steady speeds ($6.0\times$). |
+| **🏁 Grand Prix Championship** | Medium (Standard) | The balanced 3-lap tournament circuit ($350\text{ units}$ spacing, progressive acceleration up to $2.0\times$). |
 
-- 🚕 **Karachi Grand Prix** theme — Karachi landmarks (tower, buildings) on a stylized road.
-- 🌙 **Night mode** — toggle with **N** or the **Night** button.
-- 🏁 **Laps** — 3 laps of length 500.
-- 🎯 **Coins** — collect coins to earn currency; spend it to buy new vehicles.
-- 🏁 **Obstacles** — buses, trucks, rickshaws, cars; hop with **Space / ↑ / W / tap**, release to slide down.
-- ⚡ **Difficulty** — **Easy / Medium / Hard** (speed + gap tuning).
-- 📈 **Score & personal best** — persisted in `localStorage` (`personalBest`).
-- 📏 **"Track every step"** — hop counter.
+---
 
-## Controls
+## 🛺 Rickshaw Garage
 
-| Input | Action |
-|---|---|
-| `Space` / `↑` / `W` / tap | Hop |
-| Release (↑/Space/W) or `↓` / `S` | Slide down |
-| `N` | Night / day toggle |
-| `P` | Pause / resume |
-| Buttons | Start, difficulty, night, vehicle buy |
+- **Baba Auto** (🟢 Green / ⚪ White) — Default classic runner.
+- **Karachi Queen** (🔴 Crimson / ⚪ White) — High-velocity racing edition (Cost: 3 Coins).
+- **Hassan Special** (🔵 Maritime Blue / ⚪ White) — Coastal cruiser edition (Cost: 6 Coins).
+- **Bhatta Express** (🟡 Turbo Gold / ⚫ Obsidian) — Underground street racer (Cost: 10 Coins).
 
-## Getting Started
+---
+
+## 🕹️ Controls
+
+| Input | Key / Action | In-Game Effect |
+|---|---|---|
+| `Space` / `↑` / `W` / Tap | Hop / Jump | Jump over oncoming buses, trucks, cars, and rickshaws |
+| Release / `↓` / `S` | Fast Slide | Rapidly descend back onto the road |
+| `N` | Night Mode | Toggle Day / Night lighting and volumetric fog |
+| `P` | Pause / Resume | Freeze / continue current race |
+| UI Buttons | Garage & Settings | Select vehicles, adjust difficulty, and review instructions |
+
+---
+
+## 🚀 Running the Game
 
 ```bash
+# Install dependencies
 npm install
+
+# Start development server
 npm run dev
-```
 
-Open [http://localhost:3000](http://localhost:3000).
-
-## Production
-
-```bash
+# Or build and launch production server
 npm run build
 npm run start
 ```
 
-## Tech
-
-- [Next.js 16](https://nextjs.org) (App Router, Turbopack) + React 19 + TypeScript
-- [Three.js](https://threejs.org) (`three@0.160.0`) — WebGL renderer, HD (pixel ratio capped at 2)
-- Tailwind CSS 4 (scaffold), plain CSS for game UI
-- Playwright for browser verification (`/tmp/karachi_next_playwright_test.py`)
-
-> The original single-file HTML version is archived at `..\karachi-rush-html-backup\` (before the Next.js conversion).
+Visit [http://localhost:3000](http://localhost:3000).
