@@ -1,0 +1,46 @@
+# dependencies
+node_modules/
+**/node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+.next/
+**/.next/
+out/
+**/out/
+
+# production
+build/
+**/build/
+
+# misc
+.DS_Store
+Thumbs.db
+*.pem
+*.log
+
+# env files
+.env*
+
+# vercel
+.vercel
+**/.vercel/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# vscode
+.vscode/private-folder-alias.json
+
+# temporary test screenshots
+karachi-rush-*.png
