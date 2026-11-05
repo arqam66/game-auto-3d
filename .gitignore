@@ -44,3 +44,9 @@ next-env.d.ts
 
 # temporary test screenshots
 karachi-rush-*.png
+autorush-*.png
+autorush_assets/
+autorush_dump.html
+physics_extracted.js
+AGENTS.md
+**/AGENTS.md

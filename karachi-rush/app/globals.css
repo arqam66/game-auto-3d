@@ -1,24 +1,37 @@
-html,
-body,
-#__next {
-  height: 100%;
+@import "tailwindcss";
+
+:root {
+  --bg-dark: #0b1026;
+  --bg-panel: rgba(18, 22, 44, 0.85);
+  --accent-gold: #ffb703;
+  --accent-cyan: #00f0ff;
+  --accent-red: #ff0055;
+  --accent-green: #06d6a0;
+  --font-main: "Quicksand", system-ui, -apple-system, sans-serif;
 }
 
-body {
+* {
+  box-sizing: border-box;
+}
+
+html, body {
   margin: 0;
   padding: 0;
-  background-color: #bee0c7;
-  font-family: Quicksand, sans-serif;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  height: 100vh;
+  background-color: var(--bg-dark);
+  color: #fff;
+  font-family: var(--font-main);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-#app {
+#game-container {
   position: relative;
-  width: min(94vw, 850px);
-  aspect-ratio: 850 / 450;
-  margin: 40px auto;
-  background: #8ed4a0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
 }
 
 #viewport {
@@ -31,172 +44,451 @@ body {
 #viewport canvas {
   width: 100% !important;
   height: 100% !important;
+  display: block;
 }
 
-#hud {
+/* HUD Overlay */
+.game-hud {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   pointer-events: none;
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px 20px;
 }
 
-#hud button,
-#hud .buy-card {
+.hud-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.hud-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Position Badge */
+.pos-badge {
+  background: linear-gradient(135deg, rgba(255, 183, 3, 0.95), rgba(251, 133, 0, 0.95));
+  color: #1a1000;
+  padding: 6px 14px;
+  border-radius: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  box-shadow: 0 4px 15px rgba(255, 183, 3, 0.4);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.pos-main {
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.pos-total {
+  font-size: 14px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+/* Lap & Time Info */
+.race-timer-box {
+  background: var(--bg-panel);
+  padding: 6px 12px;
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.lap-pill {
+  color: var(--accent-cyan);
+}
+
+.time-pill {
+  color: #fff;
+}
+
+/* Track Progress Bar / Mini-Map */
+.track-progress-bar {
+  position: relative;
+  width: 280px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  margin-top: 6px;
+  overflow: visible;
+}
+
+.progress-track-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, #00f0ff, #06d6a0);
+  border-radius: 4px;
+}
+
+.progress-player-pin {
+  position: absolute;
+  top: -4px;
+  width: 16px;
+  height: 16px;
+  background: #ffb703;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 0 8px #ffb703;
+}
+
+.progress-rival-pin {
+  position: absolute;
+  top: -2px;
+  width: 12px;
+  height: 12px;
+  background: #ff0055;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  transform: translateX(-50%);
+}
+
+/* HUD Right Controls */
+.hud-right {
+  display: flex;
+  gap: 8px;
   pointer-events: auto;
 }
 
-.hud-score {
-  position: absolute;
-  top: 8px;
-  left: 12px;
-}
-
-.hud-coins {
-  position: absolute;
-  top: 42px;
-  left: 12px;
-}
-
-.hud-lap {
-  position: absolute;
-  top: 74px;
-  left: 12px;
-}
-
-.hud-right {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 70%;
-}
-
-.hud-btn {
-  background: rgba(34, 93, 49, 0.9);
+.icon-btn {
+  background: var(--bg-panel);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 7px 12px;
-  font-family: Quicksand, sans-serif;
-  font-size: 12px;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-}
-
-.hud-btn[data-active="Easy"],
-.hud-btn[data-active="Medium"],
-.hud-btn[data-active="Hard"] {
-  background: #ffe27a;
-  color: #225d31;
-}
-
-#buybar {
-  position: absolute;
-  bottom: 50px;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
-  gap: 8px;
-  pointer-events: none;
-  flex-wrap: wrap;
-  justify-content: center;
-  max-width: 92%;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
 }
 
-.buy-card {
-  background: rgba(34, 93, 49, 0.92);
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+/* Speedometer & Nitro */
+.hud-bottom-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.speedo-cluster {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.speedo-card {
+  background: var(--bg-panel);
+  padding: 12px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.speed-value {
+  font-size: 46px;
+  font-weight: 900;
+  line-height: 1;
   color: #fff;
-  border: 2px solid transparent;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 20px rgba(0, 240, 255, 0.6);
+}
+
+.speed-unit {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+}
+
+.nitro-cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nitro-bar-wrap {
+  width: 140px;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(0, 240, 255, 0.4);
   border-radius: 8px;
-  padding: 6px 12px;
-  font-family: Quicksand, sans-serif;
-  font-size: 12px;
-  font-weight: 700;
-  text-align: center;
-  cursor: pointer;
+  overflow: hidden;
+  position: relative;
 }
 
-.buy-card.locked {
-  border-color: rgba(255, 255, 255, 0.35);
-  opacity: 0.75;
-  cursor: not-allowed;
+.nitro-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00f0ff, #7209b7);
+  box-shadow: 0 0 12px #00f0ff;
+  transition: width 0.1s linear;
 }
 
-.buy-card.selected {
-  border-color: #ffe27a;
+.nitro-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: var(--accent-cyan);
+  display: flex;
+  justify-content: space-between;
 }
 
-.overlay {
+/* Drift Tag Notification */
+.drift-tag-popup {
+  position: absolute;
+  top: 35%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, rgba(255, 0, 85, 0.95), rgba(255, 114, 0, 0.95));
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 18px;
+  font-weight: 900;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  box-shadow: 0 0 20px rgba(255, 0, 85, 0.6);
+  pointer-events: none;
+  animation: driftPop 0.8s ease forwards;
+}
+
+@keyframes driftPop {
+  0% { transform: translate(-50%, -50%) scale(0.7); opacity: 0; }
+  20% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+  80% { transform: translate(-50%, -60%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -75%) scale(0.9); opacity: 0; }
+}
+
+/* Countdown Overlay */
+.countdown-overlay {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(142, 212, 160, 0.78);
+  pointer-events: none;
   z-index: 20;
-  text-align: center;
 }
 
-.overlay.hidden {
-  display: none;
+.countdown-number {
+  font-size: 120px;
+  font-weight: 900;
+  color: var(--accent-gold);
+  text-shadow: 0 0 40px rgba(255, 183, 3, 0.8), 0 0 80px rgba(255, 183, 3, 0.5);
+  animation: countdownPulse 0.9s ease infinite;
 }
 
-.overlay-inner {
+.countdown-number.go {
+  color: var(--accent-green);
+  text-shadow: 0 0 40px rgba(6, 214, 160, 0.8), 0 0 80px rgba(6, 214, 160, 0.5);
+}
+
+@keyframes countdownPulse {
+  0% { transform: scale(0.6); opacity: 0; }
+  30% { transform: scale(1.15); opacity: 1; }
+  80% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.2); opacity: 0; }
+}
+
+/* Modals & Screens (Start Menu, Pause, Results) */
+.screen-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 16, 38, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
   pointer-events: auto;
 }
 
-.overlay-title {
-  color: #225d31;
-  font-family: "Neulis", Quicksand, sans-serif;
-  font-size: 40px;
-  font-weight: 700;
+.modal-panel {
+  background: linear-gradient(145deg, #161b36, #0e1226);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  padding: 32px 40px;
+  max-width: 580px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  text-align: center;
+  pointer-events: auto;
 }
 
-.overlay-sub {
-  color: #225d31;
-  font-family: Quicksand, sans-serif;
-  font-size: 18px;
-  font-weight: 600;
-  margin-top: 6px;
+.game-title {
+  font-size: 38px;
+  font-weight: 900;
+  line-height: 1.1;
+  background: linear-gradient(135deg, #fff 30%, #ffb703 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 6px;
 }
 
-.overlay-score {
-  color: #225d31;
-  font-family: Quicksand, sans-serif;
-  font-size: 20px;
-  font-weight: 700;
-  margin-top: 6px;
-}
-
-.overlay-btn {
-  background: #225d31;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 10px 18px;
-  font-family: Quicksand, sans-serif;
+.game-subtitle {
   font-size: 14px;
   font-weight: 700;
-  margin: 6px;
+  color: var(--accent-cyan);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+
+.selection-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.select-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 12px 8px;
   cursor: pointer;
+  transition: all 0.2s ease;
+  color: #fff;
 }
 
-.overlay-btn:hover {
-  background: #1a4726;
+.select-card:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.overlay-btn.secondary {
-  background: transparent;
-  color: #225d31;
-  border: 2px solid #225d31;
+.select-card.active {
+  border-color: var(--accent-gold);
+  background: rgba(255, 183, 3, 0.15);
 }
 
-.overlay-actions {
-  margin-top: 14px;
+.select-card-name {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.select-card-desc {
+  font-size: 11px;
+  color: #aaa;
+  margin-top: 4px;
+}
+
+.action-btn {
+  background: linear-gradient(135deg, #00f0ff, #06d6a0);
+  color: #0b1026;
+  border: none;
+  border-radius: 14px;
+  padding: 14px 36px;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 240, 255, 0.4);
+  transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 25px rgba(0, 240, 255, 0.6);
+}
+
+.action-btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  box-shadow: none;
+  font-size: 14px;
+  padding: 10px 24px;
+  margin-left: 10px;
+}
+
+/* Mobile Controls */
+.mobile-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 15;
+  display: none;
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  .mobile-controls {
+    display: block;
+  }
+}
+
+.touch-cluster-left {
+  position: absolute;
+  bottom: 24px;
+  left: 20px;
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.touch-cluster-right {
+  position: absolute;
+  bottom: 24px;
+  right: 20px;
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.touch-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.touch-btn:active {
+  background: rgba(0, 240, 255, 0.4);
+  transform: scale(0.92);
+}
+
+.touch-btn.nitro {
+  background: rgba(0, 240, 255, 0.25);
+  border-color: #00f0ff;
+}
+
+.touch-btn.drift {
+  background: rgba(255, 0, 85, 0.25);
+  border-color: #ff0055;
 }
