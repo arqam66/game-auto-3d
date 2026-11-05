@@ -94,6 +94,7 @@ const fmtTime = (s: number) => {
 // =============================================================
 export default function KarachiRushGame() {
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const minimapRef = useRef<HTMLCanvasElement | null>(null);
 
   // ---- menu / ui state (plain React, engine reads via refs at race start)
   const [runId, setRunId] = useState(0);
@@ -101,6 +102,8 @@ export default function KarachiRushGame() {
   const [difficultyId, setDifficultyId] = useState<string>("medium");
   const [totalLaps, setTotalLaps] = useState<number>(3);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [setupOpen, setSetupOpen] = useState<boolean>(false);
+  const [menuTimeMode, setMenuTimeMode] = useState<TimeMode>("day");
   const [phase, setPhase] = useState<Phase>("menu");
   const [loading, setLoading] = useState(true);
   const [loadingVisible, setLoadingVisible] = useState(true);
@@ -138,6 +141,7 @@ export default function KarachiRushGame() {
     startRace: () => void;
     togglePause: () => void;
     cycleTimeMode: () => void;
+    setTimeMode: (m: TimeMode) => void;
     quitRace: () => void;
   } | null>(null);
 
@@ -1111,6 +1115,7 @@ export default function KarachiRushGame() {
         else if (curBg.getHex() === TRACK.sunsetSky) applyTimeMode("night");
         else applyTimeMode("day");
       },
+      setTimeMode: (m: TimeMode) => applyTimeMode(m),
       quitRace: () => {
         if (countdownInterval) clearInterval(countdownInterval);
         countdownInterval = null;
@@ -1399,6 +1404,50 @@ export default function KarachiRushGame() {
       const targetFov = isMenuIdle ? 50 : 60 + (playerSpeed / 60) * 15 + (ctrl.nitro && playerNitro > 1 ? 8 : 0);
       camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1);
       camera.updateProjectionMatrix();
+
+      // minimap (top-down track + player dot)
+      const mm = minimapRef.current;
+      if (mm) {
+        const mctx = mm.getContext("2d");
+        if (mctx) {
+          const W = mm.width, H = mm.height;
+          mctx.clearRect(0, 0, W, H);
+          mctx.fillStyle = "rgba(11,16,38,0.85)";
+          mctx.fillRect(0, 0, W, H);
+          // project spline points to 2D (x,z) scaled to fit
+          let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+          const pts: { x: number; z: number }[] = [];
+          for (let i = 0; i <= 120; i++) {
+            const u = i / 120;
+            const p = spline.getPointAt(u);
+            pts.push({ x: p.x, z: p.z });
+            minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+            minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+          }
+          const pad = 12;
+          const sx = (W - pad * 2) / (maxX - minX || 1);
+          const sz = (H - pad * 2) / (maxZ - minZ || 1);
+          const s = Math.min(sx, sz);
+          const ox = pad + ((W - pad * 2) - (maxX - minX) * s) / 2 - minX * s;
+          const oz = pad + ((H - pad * 2) - (maxZ - minZ) * s) / 2 - minZ * s;
+          mctx.strokeStyle = "#3a3a42";
+          mctx.lineWidth = 2;
+          mctx.beginPath();
+          pts.forEach((p, i) => {
+            const x = p.x * s + ox;
+            const y = p.z * s + oz;
+            if (i === 0) mctx.moveTo(x, y); else mctx.lineTo(x, y);
+          });
+          mctx.closePath();
+          mctx.stroke();
+          // player dot
+          const pp = spline.getPointAt(Math.min(0.999, playerU));
+          mctx.fillStyle = "#f2b632";
+          mctx.beginPath();
+          mctx.arc(pp.x * s + ox, pp.z * s + oz, 4, 0, Math.PI * 2);
+          mctx.fill();
+        }
+      }
 
       // 4. rivals (traveled-distance model: dist grows monotonically, u derived)
       let rank = 1;
@@ -1699,6 +1748,14 @@ export default function KarachiRushGame() {
               <div className="lap-banner-tagline">{lapBanner.tagline}</div>
             </div>
           )}
+
+          {/* autorush-style HUD chrome */}
+          <canvas id="minimap" className="minimap" width={190} height={190} ref={minimapRef} />
+          <div className="name-tags" id="nameTags" />
+          <div className="drift-tag" id="driftTag" aria-hidden="true">
+            <b id="driftNum">0</b><span id="driftWord">M DRIFT</span>
+          </div>
+          <div className="wrong-way" id="wrongWay">WRONG WAY!</div>
         </div>
       )}
 
@@ -1712,15 +1769,17 @@ export default function KarachiRushGame() {
       {/* Start Menu */}
       {phase === "menu" && (
         <div className="screen-overlay menu-overlay">
-          <div className="modal-panel">
+          <div className="modal-panel home-dock">
             <div className="menu-ticker" aria-hidden="true">
               <div className="menu-ticker-track">
                 <span>SADAR BAZAR ◆ II CHUNDRIGAR ROAD ◆ CLIFTON NIGHT LAP ◆ DRIFT FOR SCORE ◆ N FOR NITRO ◆ DODGE THE CONES ◆&nbsp;</span>
                 <span aria-hidden="true">SADAR BAZAR ◆ II CHUNDRIGAR ROAD ◆ CLIFTON NIGHT LAP ◆ DRIFT FOR SCORE ◆ N FOR NITRO ◆ DODGE THE CONES ◆&nbsp;</span>
               </div>
             </div>
-            <div className="game-title">KARACHI RUSH</div>
-            <div className="game-subtitle">SADAR — II CHUNDRIGAR — CLIFTON</div>
+            <header className="home-top">
+              <div className="game-title">KARACHI RUSH</div>
+              <div className="game-subtitle">SADAR — II CHUNDRIGAR — CLIFTON</div>
+            </header>
 
             <div className="bank-pill">
               <span className="coin-dot coin-dot-lg" />
@@ -1728,8 +1787,50 @@ export default function KarachiRushGame() {
               <span className="bank-label">COIN BANK</span>
             </div>
 
+            <div className="home-picker">
+              <button className="arrow" aria-label="Previous rickshaw" onClick={() => {
+                const idx = VEHICLES.findIndex((v) => v.id === selectedVehicle);
+                const prev = VEHICLES[(idx - 1 + VEHICLES.length) % VEHICLES.length];
+                if (prev.price === 0 || unlocked.includes(prev.id)) setSelectedVehicle(prev.id);
+              }}>‹</button>
+              <div className="selection-grid garage-grid" style={{ flex: 1 }}>
+                {VEHICLES.map((v, i) => {
+                  const isOwned = v.price === 0 || unlocked.includes(v.id);
+                  const isActive = selectedVehicle === v.id;
+                  if (!isActive) return null;
+                  return (
+                    <div
+                      key={v.id}
+                      className={`select-card ${isActive ? "active" : ""} ${isOwned ? "" : "locked"}`}
+                      style={{ "--i": i } as CSSProperties}
+                    >
+                      <div className="select-card-name">{v.name}</div>
+                      <div className="select-card-desc">{v.subtitle}</div>
+                      <div className="select-card-stats">TOP {v.topSpeed} KM/H</div>
+                      {!isOwned ? (
+                        <button
+                          className={`buy-btn ${bank >= v.price ? "" : "buy-btn-disabled"}`}
+                          onClick={(e) => { e.stopPropagation(); buyVehicle(v.id); }}
+                        >
+                          BUY {v.price}
+                        </button>
+                      ) : (
+                        <div className="owned-tag">EQUIPPED</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <button className="arrow" aria-label="Next rickshaw" onClick={() => {
+                const idx = VEHICLES.findIndex((v) => v.id === selectedVehicle);
+                const next = VEHICLES[(idx + 1) % VEHICLES.length];
+                if (next.price === 0 || unlocked.includes(next.id)) setSelectedVehicle(next.id);
+              }}>›</button>
+            </div>
+
+            {/* keep all vehicles selectable in a compact grid below */}
             <div className="section-label">RICKSHAW GARAGE</div>
-            <div className="selection-grid garage-grid">
+            <div className="selection-grid garage-grid compact">
               {VEHICLES.map((v, i) => {
                 const isOwned = v.price === 0 || unlocked.includes(v.id);
                 const isActive = selectedVehicle === v.id;
@@ -1742,9 +1843,7 @@ export default function KarachiRushGame() {
                   >
                     <div className="select-card-name">{v.name}</div>
                     <div className="select-card-desc">{v.subtitle}</div>
-                    <div className="select-card-stats">
-                      TOP {v.topSpeed} KM/H
-                    </div>
+                    <div className="select-card-stats">TOP {v.topSpeed} KM/H</div>
                     {!isOwned ? (
                       <button
                         className={`buy-btn ${bank >= v.price ? "" : "buy-btn-disabled"}`}
@@ -1787,12 +1886,69 @@ export default function KarachiRushGame() {
               ))}
             </div>
 
-            <button className="action-btn" onClick={() => engineRef.current?.startRace()}>
-              START RUSH <span className="btn-arrow" aria-hidden="true">▶</span>
-            </button>
-            <div className="controls-hint">
-              W/↑ THROTTLE • S/↓ BRAKE • A/D STEER • SPACE DRIFT • N NITRO • P PAUSE • N-cycle night
+            <div className="go-row">
+              <button className="action-btn" onClick={() => engineRef.current?.startRace()}>
+                START RUSH <span className="btn-arrow" aria-hidden="true">▶</span>
+              </button>
             </div>
+
+            <div className="home-row">
+              <button className="btn sec-btn setup-btn" onClick={() => setSetupOpen(true)}>
+                Race setup
+              </button>
+            </div>
+
+            <div className="controls-hint">
+              W/↑ THROTTLE • S/↓ BRAKE • A/D STEER • SPACE DRIFT • N NITRO • P PAUSE
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Race setup sheet */}
+      {phase === "menu" && setupOpen && (
+        <div className="screen-overlay" onClick={() => setSetupOpen(false)}>
+          <div className="modal-panel panel-slim" onClick={(e) => e.stopPropagation()}>
+            <div className="game-title" style={{ fontSize: 28 }}>RACE SETUP</div>
+            <div className="game-subtitle">Choose how you race</div>
+            <div className="section-label">LAPS</div>
+            <div className="lap-choose-row">
+              {[1, 3, 5].map((laps) => (
+                <button
+                  key={laps}
+                  className={`icon-btn ${totalLaps === laps ? "active" : ""}`}
+                  onClick={() => setTotalLaps(laps)}
+                >
+                  {laps}
+                </button>
+              ))}
+            </div>
+            <div className="section-label">RIVALS</div>
+            <div className="selection-grid diff-grid">
+              {DIFFICULTIES.map((d) => (
+                <div
+                  key={d.id}
+                  className={`select-card ${difficultyId === d.id ? "active" : ""}`}
+                  onClick={() => setDifficultyId(d.id)}
+                >
+                  <div className="select-card-name">{d.label}</div>
+                  <div className="select-card-desc">{d.tagline}</div>
+                </div>
+              ))}
+            </div>
+            <div className="section-label">TIME</div>
+            <div className="lap-choose-row">
+              {(["day", "sunset", "night"] as TimeMode[]).map((t) => (
+                <button
+                  key={t}
+                  className={`icon-btn ${menuTimeMode === t ? "active" : ""}`}
+                  onClick={() => { setMenuTimeMode(t); engineRef.current?.setTimeMode(t); }}
+                >
+                  {t.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <button className="action-btn" onClick={() => setSetupOpen(false)}>DONE</button>
           </div>
         </div>
       )}

@@ -1355,3 +1355,86 @@ html, body {
     animation: none;
   }
 }
+/* --- autorush-style home dock & HUD chrome ------------------ */
+.home-dock { width: min(620px, 94vw); }
+.home-top { text-align: center; margin-bottom: 6px; }
+
+.home-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.arrow {
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-hard-sm);
+  width: 38px;
+  height: 38px;
+  font-size: 22px;
+  font-weight: 900;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.arrow:hover { background: var(--panel); transform: translate(-1px,-1px); box-shadow: 4px 4px 0 rgba(0,0,0,0.55); }
+.arrow:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 rgba(0,0,0,0.55); }
+
+.compact { grid-template-columns: repeat(3, 1fr); }
+
+.go-row { margin-top: 14px; }
+.home-row { display: flex; gap: 8px; margin-top: 10px; justify-content: center; flex-wrap: wrap; }
+.setup-btn { width: auto; margin-top: 0; padding: 10px 16px; font-size: 13px; }
+
+.minimap {
+  position: absolute;
+  top: 80px;
+  right: 16px;
+  border: 2px solid var(--line);
+  box-shadow: var(--shadow-hard-sm);
+  background: var(--night);
+  z-index: 5;
+}
+
+.name-tags { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+
+.drift-tag {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--asphalt);
+  border: 2px solid var(--yellow);
+  box-shadow: var(--shadow-hard);
+  padding: 6px 14px;
+  font-weight: 900;
+  color: var(--yellow);
+  z-index: 7;
+  display: none;
+}
+
+.drift-tag:not(.hidden) { display: block; }
+
+.wrong-way {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--red);
+  color: #fff;
+  border: 2px solid #17140a;
+  box-shadow: var(--shadow-hard);
+  padding: 8px 18px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  z-index: 8;
+  display: none;
+}
+
+.wrong-way:not(.hidden) { display: block; }
+
+@media (width <= 760px) {
+  .minimap { top: 70px; right: 8px; width: 120px; height: 120px; }
+}
