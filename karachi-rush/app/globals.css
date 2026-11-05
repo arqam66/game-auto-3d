@@ -1006,6 +1006,14 @@ html, body {
   animation-delay: 780ms;
 }
 
+/* START must never scroll away — pin it to the panel's visible bottom */
+.menu-overlay .action-btn {
+  position: sticky;
+  bottom: 10px;
+  z-index: 5;
+  margin-top: 24px;
+}
+
 .menu-overlay .controls-hint {
   animation: card-drop 0.5s var(--pop-spring) backwards;
   animation-delay: 900ms;

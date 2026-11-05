@@ -377,6 +377,7 @@ export default function KarachiRushGame() {
       dist: number; // total meters traveled (negative = behind the start line)
     }
     const rivals: AIRivalInstance[] = [];
+    const rivalTagMeshes: THREE.Mesh[] = [];
     const obstacles: Obstacle[] = [];
     const coinRows: CoinRow[] = [];
     const lapSummaries: LapSummary[] = [];
@@ -483,6 +484,7 @@ export default function KarachiRushGame() {
         );
         tag.position.set(0, 3.9, 0);
         group.add(tag);
+        rivalTagMeshes.push(tag);
       }
 
       return { group, frontWheel: fork };
@@ -1290,6 +1292,9 @@ export default function KarachiRushGame() {
       const diff = difficultyRef.current;
       const isRacing = manPhase === "racing";
       const isMenuIdle = manPhase === "menu";
+      // rival name tags are canvas-texture planes: only part of the race,
+      // never part of the menu showroom shot
+      for (const tag of rivalTagMeshes) tag.visible = !isMenuIdle;
 
       if (isRacing) raceTimer += dt;
 
