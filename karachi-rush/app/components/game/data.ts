@@ -61,7 +61,7 @@ export const TRACK = {
   sunsetSky: 0xff7043,
   nightSky: 0x0b1026,
   ambientDay: 0xfff3e0,
-  groundColor: 0x4a6b52,
+  groundColor: 0x6f6046,
   points: [
     { x: 0, y: 0, z: 0 }, // start/finish — Sadar gate
     { x: 50, y: 2, z: 350 },

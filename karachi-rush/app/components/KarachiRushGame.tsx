@@ -1,7 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, type CSSProperties } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
+import {
+  CoinIcon,
+  BoltIcon,
+  PauseIcon,
+  PlayIcon,
+  SpeakerIcon,
+  SpeakerOffIcon,
+  WarningIcon,
+  GearIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+} from "./game/icons";
 import {
   TRACK,
   DISTRICTS,
@@ -78,17 +90,68 @@ interface Controls {
   drift: boolean;
 }
 
-const SOUND_LABELS: Record<TimeMode, string> = {
-  day: "☀️ DAY",
-  sunset: "🌅 DUSK",
-  night: "🌙 NIGHT",
+const TIME_LABELS: Record<TimeMode, string> = {
+  day: "DAY",
+  sunset: "DUSK",
+  night: "NIGHT",
 };
+
+// 2πr for the 64px nitro ring's 28px radius track.
+const NITRO_CIRC = 2 * Math.PI * 28;
+
+const ordinal = (n: number) => {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+};
+
+const fmtNum = (n: number) => n.toLocaleString("en-US");
 
 const fmtTime = (s: number) => {
   const m = Math.floor(s / 60);
   const sec = s - m * 60;
   return `${m}:${sec.toFixed(1).padStart(4, "0")}`;
 };
+
+/**
+ * A 3x3 block of lit and dark windows on a transparent tile. One texture is
+ * shared by every facade and each plane repeats it by size, so a 20 m corner
+ * shop and a 120 m tower both get ~2 m windows instead of one giant amber
+ * quad — which is what the old single-plane version rendered.
+ */
+function makeWindowTexture(): THREE.CanvasTexture {
+  const tile = 96;
+  const cols = 3;
+  const rows = 3;
+  const canvas = document.createElement("canvas");
+  canvas.width = tile;
+  canvas.height = tile;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const rng = mulberry32(4471);
+    const cw = tile / cols;
+    const ch = tile / rows;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (rng() < 0.28) continue;
+        // Neutral glass in daylight; the amber comes from the emissive channel
+        // at dusk and night, so windows do not glow at noon.
+        ctx.fillStyle = rng() < 0.16 ? "#ffffff" : rng() < 0.5 ? "#dfe8f4" : "#b9c6d8";
+        ctx.fillRect(x * cw + cw * 0.2, y * ch + ch * 0.22, cw * 0.6, ch * 0.5);
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 
 // =============================================================
 // COMPONENT
@@ -103,7 +166,6 @@ export default function KarachiRushGame() {
   const [difficultyId, setDifficultyId] = useState<string>("medium");
   const [totalLaps, setTotalLaps] = useState<number>(3);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
-  const [setupOpen, setSetupOpen] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [menuTimeMode, setMenuTimeMode] = useState<TimeMode>("day");
   const [phase, setPhase] = useState<Phase>("menu");
@@ -138,6 +200,10 @@ export default function KarachiRushGame() {
   const difficultyRef = useRef<DifficultyDef>(DIFFICULTIES[1]);
   const totalLapsRef = useRef(3);
   const soundEnabledRef = useRef(true);
+  // The menu TIME row doubles as the race's starting time of day. A ref is
+  // needed because the engine is built once and would otherwise close over the
+  // initial "day".
+  const menuTimeModeRef = useRef<TimeMode>("day");
 
   // ---- engine trigger surface
   const engineRef = useRef<{
@@ -339,7 +405,13 @@ export default function KarachiRushGame() {
     let renderer!: THREE.WebGLRenderer;
     let scene!: THREE.Scene;
     let camera!: THREE.PerspectiveCamera;
-    let ambientLight!: THREE.AmbientLight;
+    let skyDome: THREE.Mesh | null = null;
+    let skyUniforms: {
+      cTop: { value: THREE.Color };
+      cMid: { value: THREE.Color };
+      cBot: { value: THREE.Color };
+    } | null = null;
+    let ambientLight!: THREE.HemisphereLight;
     let dirLight!: THREE.DirectionalLight;
     let headLight!: THREE.SpotLight;
     let animId = 0;
@@ -389,6 +461,7 @@ export default function KarachiRushGame() {
     }
     const rivals: AIRivalInstance[] = [];
     const rivalTagMeshes: THREE.Mesh[] = [];
+    const tagAim = new THREE.Vector3();
     const windowMats: THREE.MeshStandardMaterial[] = [];
     const obstacles: Obstacle[] = [];
     const coinRows: CoinRow[] = [];
@@ -517,7 +590,7 @@ export default function KarachiRushGame() {
       const g = build(dist);
       g.position.set(
         pt.x + normal.x * side * dist,
-        0,
+        GROUND_Y,
         pt.z + normal.z * side * dist
       );
       g.lookAt(0, g.position.y, 0);
@@ -672,6 +745,12 @@ export default function KarachiRushGame() {
     // ---------------------------------------------------------
     // SCENE INITIALIZATION
     // ---------------------------------------------------------
+    // The spline's y runs from −4 to 12, so a flat ground at 0 would bury the
+    // road at its lowest point and leave the crest floating. The ground sits
+    // below the lowest point of the track and the road's outer edge is skirted
+    // down to it, so the climb reads as an embankment instead of a ribbon.
+    const GROUND_Y = Math.min(...TRACK.points.map((p) => p.y)) - 2;
+
     function initScene() {
       if (!viewport) return;
       const width = viewport.clientWidth || 850;
@@ -679,8 +758,48 @@ export default function KarachiRushGame() {
 
       scene = new THREE.Scene();
       scene.background = new THREE.Color(TRACK.daySky);
-      scene.fog = new THREE.FogExp2(TRACK.daySky, 0.0018);
+      scene.fog = new THREE.FogExp2(TRACK.daySky, 0.0011);
       camera = new THREE.PerspectiveCamera(60, width / height, 0.5, 3000);
+
+      // Sky dome. scene.background can only be one flat hex, which read as a
+      // cyan void behind the skyline. This sphere is drawn from the inside with
+      // a three-stop vertical gradient and is re-centred on the camera every
+      // frame, so it never clips. It deliberately opts out of fog: fog is what
+      // makes distant blocks dissolve into the horizon colour, and the bottom
+      // stop is set to that same colour so the join is invisible.
+      skyUniforms = {
+        cTop: { value: new THREE.Color(0x2f6d94) },
+        cMid: { value: new THREE.Color(0x6aa9c9) },
+        cBot: { value: new THREE.Color(TRACK.daySky) },
+      };
+      const skyMat = new THREE.ShaderMaterial({
+        uniforms: skyUniforms,
+        side: THREE.BackSide,
+        depthWrite: false,
+        fog: false,
+        vertexShader: `
+          varying vec3 vDir;
+          void main() {
+            vDir = normalize(position);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 cTop;
+          uniform vec3 cMid;
+          uniform vec3 cBot;
+          varying vec3 vDir;
+          void main() {
+            float h = clamp(vDir.y * 0.5 + 0.5, 0.0, 1.0);
+            vec3 c = mix(cBot, cMid, smoothstep(0.50, 0.60, h));
+            c = mix(c, cTop, smoothstep(0.60, 0.98, h));
+            gl_FragColor = vec4(c, 1.0);
+          }
+        `,
+      });
+      skyDome = new THREE.Mesh(new THREE.SphereGeometry(2000, 32, 16), skyMat);
+      skyDome.renderOrder = -1;
+      scene.add(skyDome);
 
       renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
       renderer.setSize(width, height);
@@ -690,9 +809,9 @@ export default function KarachiRushGame() {
       viewport.innerHTML = "";
       viewport.appendChild(renderer.domElement);
 
-      ambientLight = new THREE.AmbientLight(TRACK.ambientDay, 0.95);
+      ambientLight = new THREE.HemisphereLight(TRACK.daySky, TRACK.groundColor, 0.85);
       scene.add(ambientLight);
-      dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
+      dirLight = new THREE.DirectionalLight(0xffffff, 1.15);
       dirLight.position.set(200, 400, 150);
       dirLight.castShadow = true;
       dirLight.shadow.mapSize.width = 2048;
@@ -705,7 +824,7 @@ export default function KarachiRushGame() {
       dirLight.shadow.camera.top = d;
       dirLight.shadow.camera.bottom = -d;
       scene.add(dirLight);
-      headLight = new THREE.SpotLight(0xfff6c5, 0, 180, Math.PI / 4, 0.3, 1);
+      headLight = new THREE.SpotLight(0xfff6c5, 0, 180, Math.PI / 4, 0.3, 2);
       headLight.position.set(0, 2, 2);
       scene.add(headLight);
 
@@ -714,7 +833,7 @@ export default function KarachiRushGame() {
         new THREE.MeshStandardMaterial({ color: TRACK.groundColor, roughness: 0.9 })
       );
       ground.rotation.x = -Math.PI / 2;
-      ground.position.y = -0.1;
+      ground.position.y = GROUND_Y;
       ground.receiveShadow = true;
       scene.add(ground);
 
@@ -728,10 +847,11 @@ export default function KarachiRushGame() {
       const halfW = roadW / 2;
 
       const roadPositions: number[] = [];
-      const roadNormals: number[] = [];
       const roadUvs: number[] = [];
       const curbL: number[] = [];
       const curbR: number[] = [];
+      const skirtL: number[] = [];
+      const skirtR: number[] = [];
 
       for (let i = 0; i <= segments; i++) {
         const u = i / segments;
@@ -741,7 +861,6 @@ export default function KarachiRushGame() {
 
         roadPositions.push(leftPt.x, leftPt.y + 0.05, leftPt.z);
         roadPositions.push(rightPt.x, rightPt.y + 0.05, rightPt.z);
-        roadNormals.push(0, 1, 0, 0, 1, 0);
         roadUvs.push(0, u * 40, 1, u * 40);
 
         const curbWidth = 1.4;
@@ -749,30 +868,64 @@ export default function KarachiRushGame() {
         curbL.push(leftPt.x, leftPt.y + 0.15, leftPt.z, curbLOuter.x, curbLOuter.y + 0.1, curbLOuter.z);
         const curbROuter = new THREE.Vector3().copy(rightPt).addScaledVector(normal, -curbWidth);
         curbR.push(rightPt.x, rightPt.y + 0.15, rightPt.z, curbROuter.x, curbROuter.y + 0.1, curbROuter.z);
+
+        // Embankment skirt — from each curb's outer edge straight down to the
+        // ground, so the elevated parts of the circuit have a base.
+        skirtL.push(curbLOuter.x, curbLOuter.y + 0.05, curbLOuter.z, curbLOuter.x, GROUND_Y, curbLOuter.z);
+        skirtR.push(curbROuter.x, curbROuter.y + 0.05, curbROuter.z, curbROuter.x, GROUND_Y, curbROuter.z);
       }
 
+      // splineFrame's normal is (−t.z, 0, t.x) and the vertex pair is
+      // (left = +normal, right = −normal), so the intuitive a,b,c winding
+      // produces a face normal of −Y and FrontSide culls the whole road.
+      // Reversing the two triangles puts the surface back.
       const roadIndices: number[] = [];
+      const curbIndicesL: number[] = [];
+      const curbIndicesR: number[] = [];
       for (let i = 0; i < segments; i++) {
         const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d2 = (i + 1) * 2 + 1;
-        roadIndices.push(a, b, c, b, d2, c);
+        roadIndices.push(a, c, b, b, c, d2);
+        // The left curb's outer edge runs along +normal and the right curb's
+        // along −normal, so the pair needs opposite winding to both face up.
+        curbIndicesL.push(a, b, c, b, d2, c);
+        curbIndicesR.push(a, c, b, b, c, d2);
       }
 
       const roadGeo = new THREE.BufferGeometry();
       roadGeo.setAttribute("position", new THREE.Float32BufferAttribute(roadPositions, 3));
-      roadGeo.setAttribute("normal", new THREE.Float32BufferAttribute(roadNormals, 3));
       roadGeo.setAttribute("uv", new THREE.Float32BufferAttribute(roadUvs, 2));
       roadGeo.setIndex(roadIndices);
-      const roadMesh = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ color: 0x22252a, roughness: 0.8, metalness: 0.1 }));
+      roadGeo.computeVertexNormals();
+      const roadMesh = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.85, metalness: 0.05 }));
       roadMesh.receiveShadow = true;
       scene.add(roadMesh);
 
-      for (const pts of [curbL, curbR]) {
+      const curbDefs: Array<[number[], number[], number]> = [
+        [curbL, curbIndicesL, 0xd90429],
+        [curbR, curbIndicesR, 0xf2f0e8],
+      ];
+      for (const [pts, idx, color] of curbDefs) {
         const g = new THREE.BufferGeometry();
         g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-        g.setIndex(roadIndices);
-        const isL = pts === curbL;
-        const curb = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: isL ? 0xd90429 : 0xf2f0e8, roughness: 0.7 }));
-        scene.add(curb);
+        g.setIndex(idx);
+        g.computeVertexNormals();
+        scene.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.7 })));
+      }
+
+      const skirtIndices: number[] = [];
+      for (let i = 0; i < segments; i++) {
+        const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d2 = (i + 1) * 2 + 1;
+        skirtIndices.push(a, b, c, b, d2, c);
+      }
+      const skirtMat = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.95, side: THREE.DoubleSide });
+      for (const pts of [skirtL, skirtR]) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+        g.setIndex(skirtIndices);
+        g.computeVertexNormals();
+        const skirt = new THREE.Mesh(g, skirtMat);
+        skirt.receiveShadow = true;
+        scene.add(skirt);
       }
 
       // Center dashed lane marking
@@ -810,10 +963,10 @@ export default function KarachiRushGame() {
       const pillarGeo = new THREE.BoxGeometry(1.5, 12, 1.5);
       const pillarMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, metalness: 0.8 });
       const pillarL = new THREE.Mesh(pillarGeo, pillarMat);
-      pillarL.position.set(-halfW - 2, 6, 0);
+      pillarL.position.set(-halfW - 2, GROUND_Y + 6, 0);
       gantry.add(pillarL);
       const pillarR = new THREE.Mesh(pillarGeo, pillarMat);
-      pillarR.position.set(halfW + 2, 6, 0);
+      pillarR.position.set(halfW + 2, GROUND_Y + 6, 0);
       gantry.add(pillarR);
       const archMat = new THREE.MeshStandardMaterial({ color: 0xf2b632, emissive: 0x6b4d00, emissiveIntensity: 0.5 });
       const arch = new THREE.Mesh(new THREE.BoxGeometry(roadW + 6, 2.5, 2), archMat);
@@ -837,53 +990,97 @@ export default function KarachiRushGame() {
 
       // generic city fill
       const rng = mulberry32(7021);
-      const bldgMatDay = new THREE.MeshStandardMaterial({ color: 0x8d99ae, roughness: 0.85 });
-      const bldgMatGlass = new THREE.MeshStandardMaterial({ color: 0x2b2d42, roughness: 0.3, metalness: 0.8 });
-      const bldgMatBrick = new THREE.MeshStandardMaterial({ color: 0x7a5a4a, roughness: 0.9 });
-      const mats = [bldgMatDay, bldgMatGlass, bldgMatBrick];
+      const winTex = makeWindowTexture();
+      // Karachi's own facade range: sandstone and limewash against the dark
+      // glass of the newer towers on II Chundrigar.
+      const bldgPalette = [0x8d99ae, 0x33415c, 0x7a5a4a, 0x9c8d7a, 0x51607a];
+      const lampMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+      const lampGeo = new THREE.CylinderGeometry(0.2, 0.3, 10, 8);
       for (let i = 0; i < 90; i++) {
         const u = (i / 90 + rng() * 0.05) % 1.0;
         const { pt, normal } = splineFrame(u);
         const side = i % 2 === 0 ? 1 : -1;
-        const dist = TRACK.roadWidth * 0.6 + 18 + rng() * 70;
-        const bw = 20 + rng() * 30;
-        const bd = 20 + rng() * 30;
-        const bh = 60 + rng() * 160;
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mats[i % 3]);
-        mesh.position.set(pt.x + normal.x * side * dist, bh / 2, pt.z + normal.z * side * dist);
+        const bw = 18 + rng() * 26;
+        const bd = 18 + rng() * 26;
+        // Skewed low so the skyline is mostly three-to-six storey blocks with
+        // the occasional tower, instead of 90 slabs at a uniform 100 m.
+        const bh = 24 + Math.pow(rng(), 1.8) * 125;
+
+        // Clearance measured to the *near face*, not the centre. The old
+        // `roadWidth + 16` put a 50 m deep block centred 38 m out, which reached
+        // the curb and turned the whole circuit into a canyon.
+        const clearance = TRACK.roadWidth / 2 + 12 + Math.max(bw, bd) / 2;
+        const dist = clearance + rng() * 55;
+
+        // Per-building lightness jitter. Three shared materials made every
+        // neighbouring pair read as one continuous wall.
+        const mat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(bldgPalette[i % bldgPalette.length]).offsetHSL(0, 0, (rng() - 0.5) * 0.13),
+          roughness: 0.9,
+        });
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mat);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-        scene.add(mesh);
-        // window strip for glass buildings
+
+        // Grouped so the window strip rides on the road-facing face whichever
+        // way the block is turned. Local +Z points at the road.
+        const group = new THREE.Group();
+        const toRoad = new THREE.Vector3(-normal.x * side, 0, -normal.z * side);
+        group.rotation.y = Math.atan2(toRoad.x, toRoad.z) + (rng() - 0.5) * 0.44;
+        group.position.set(pt.x + normal.x * side * dist, GROUND_Y + bh / 2, pt.z + normal.z * side * dist);
+        group.add(mesh);
+        scene.add(group);
+
         if (i % 3 === 1) {
-          const winMat = new THREE.MeshStandardMaterial({ color: 0xf2b632, emissive: 0xf2b632, emissiveIntensity: 0.35, transparent: true, opacity: 0.6 });
+          // Neutral glass by day; the amber comes entirely from emissive,
+          // which applyTimeMode raises at dusk and night.
+          const winMat = new THREE.MeshStandardMaterial({
+            color: 0x35425c,
+            emissive: 0xffb84d,
+            emissiveIntensity: 0.06,
+            map: winTex,
+            alphaMap: winTex,
+            transparent: true,
+            depthWrite: false,
+            roughness: 0.35,
+            metalness: 0.2,
+          });
           windowMats.push(winMat);
-          const win = new THREE.Mesh(new THREE.PlaneGeometry(bw * 0.85, bh * 0.7), winMat);
-          win.position.set(pt.x + normal.x * side * (dist - bd / 2 - 0.5), bh / 2, pt.z + normal.z * side * (dist - bd / 2 - 0.5));
-          win.lookAt(new THREE.Vector3(pt.x, bh / 2, pt.z));
-          scene.add(win);
+          const winW = bw * 0.9;
+          const winH = bh * 0.74;
+          const winGeo = new THREE.PlaneGeometry(winW, winH);
+          // UVs scaled by facade size: one texture tile per ~6 m, so window
+          // cells land around 2 m on every building regardless of its height.
+          const uv = winGeo.attributes.uv as THREE.BufferAttribute;
+          const repX = Math.max(1, Math.round(winW / 6));
+          const repY = Math.max(1, Math.round(winH / 6));
+          for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * repX, uv.getY(k) * repY);
+          const win = new THREE.Mesh(winGeo, winMat);
+          win.position.set(0, 0, bd / 2 + 0.4);
+          group.add(win);
         }
         if (i % 2 === 0) {
-          const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 10, 8), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+          const lampPost = new THREE.Mesh(lampGeo, lampMat);
           const dk = TRACK.roadWidth / 2 + 2;
-          lampPost.position.set(pt.x + normal.x * side * dk, 5, pt.z + normal.z * side * dk);
+          lampPost.position.set(pt.x + normal.x * side * dk, GROUND_Y + 5, pt.z + normal.z * side * dk);
           scene.add(lampPost);
         }
       }
 
-      // far skyline ring (fills the horizon, no shadows)
+      // far skyline ring — pushed out past 250 m so the fog does the work of
+      // flattening it into haze instead of it standing at full contrast.
       const rng2 = mulberry32(9091);
-      const skyMat = new THREE.MeshStandardMaterial({ color: 0x57607a, roughness: 1, metalness: 0 });
+      const skyMat = new THREE.MeshStandardMaterial({ color: 0x6b7794, roughness: 1, metalness: 0 });
       for (let i = 0; i < 26; i++) {
         const u = (i / 26 + rng2() * 0.1) % 1.0;
         const { pt, normal } = splineFrame(u);
         const side = i % 2 === 0 ? 1 : -1;
-        const dist = TRACK.roadWidth * 0.6 + 160 + rng2() * 220;
+        const dist = TRACK.roadWidth * 0.6 + 260 + rng2() * 420;
         const bw = 60 + rng2() * 80;
         const bd = 60 + rng2() * 80;
-        const bh = 90 + rng2() * 170;
+        const bh = 70 + Math.pow(rng2(), 1.5) * 180;
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), skyMat);
-        mesh.position.set(pt.x + normal.x * side * dist, bh / 2, pt.z + normal.z * side * dist);
+        mesh.position.set(pt.x + normal.x * side * dist, GROUND_Y + bh / 2, pt.z + normal.z * side * dist);
         scene.add(mesh);
       }
     }
@@ -1069,29 +1266,43 @@ export default function KarachiRushGame() {
       if (mode === "day") {
         scene.background = new THREE.Color(TRACK.daySky);
         scene.fog = new THREE.FogExp2(TRACK.daySky, 0.0018);
-        ambientLight.intensity = 0.95;
-        ambientLight.color.set(TRACK.ambientDay);
-        dirLight.intensity = 1.6;
+        skyUniforms?.cTop.value.set(0x2f6d94);
+        skyUniforms?.cMid.value.set(0x6aa9c9);
+        skyUniforms?.cBot.value.set(TRACK.daySky);
+        ambientLight.intensity = 0.85;
+        ambientLight.color.set(TRACK.daySky);
+        ambientLight.groundColor.set(TRACK.groundColor);
+        dirLight.intensity = 1.15;
         dirLight.color.set(0xffffff);
         headLight.intensity = 0;
       } else if (mode === "sunset") {
         scene.background = new THREE.Color(TRACK.sunsetSky);
-        scene.fog = new THREE.FogExp2(TRACK.sunsetSky, 0.0025);
+        scene.fog = new THREE.FogExp2(TRACK.sunsetSky, 0.0016);
+        skyUniforms?.cTop.value.set(0x2a1733);
+        skyUniforms?.cMid.value.set(0xc4452f);
+        skyUniforms?.cBot.value.set(TRACK.sunsetSky);
         ambientLight.intensity = 0.6;
         ambientLight.color.set(0xffab91);
-        dirLight.intensity = 1.0;
+        ambientLight.groundColor.set(0x584032);
+        dirLight.intensity = 0.95;
         dirLight.color.set(0xff9800);
-        headLight.intensity = 0.8;
+        headLight.intensity = 700;
       } else {
         scene.background = new THREE.Color(TRACK.nightSky);
-        scene.fog = new THREE.FogExp2(TRACK.nightSky, 0.0035);
-        ambientLight.intensity = 0.25;
-        ambientLight.color.set(0x3d4a68);
-        dirLight.intensity = 0.45;
+        scene.fog = new THREE.FogExp2(TRACK.nightSky, 0.0021);
+        skyUniforms?.cTop.value.set(0x04060f);
+        skyUniforms?.cMid.value.set(0x0a1330);
+        skyUniforms?.cBot.value.set(TRACK.nightSky);
+        ambientLight.intensity = 0.42;
+        ambientLight.color.set(0x46577a);
+        ambientLight.groundColor.set(0x181b26);
+        dirLight.intensity = 0.48;
         dirLight.color.set(0x8fa4d2);
-        headLight.intensity = 3.5;
+        // Three.js r155+ uses physical spotlight units, so the old 3.5 lit
+        // nothing at 20 m. At decay 2 this gives ~22 lux ten metres out.
+        headLight.intensity = 2200;
       }
-      const winInt = mode === "night" ? 0.9 : mode === "sunset" ? 0.55 : 0.35;
+      const winInt = mode === "night" ? 1.15 : mode === "sunset" ? 0.45 : 0.06;
       for (const m of windowMats) m.emissiveIntensity = winInt;
     }
     applyTimeMode("day");
@@ -1128,7 +1339,9 @@ export default function KarachiRushGame() {
 
       clearRaceObjects();
       generateRaceObjects(difficultyRef.current);
-      applyTimeMode("day");
+      // Lap 1 opens on the menu's chosen TIME (default is day, as before);
+      // each subsequent district rolls its own phase from lap 2 on.
+      applyTimeMode(menuTimeModeRef.current);
       onBanner({ district: "SADAR", tagline: "EMPRESS MARKET • CHAAR MINAR", lap: 1, coins: -1, traps: 0, time: 0 });
       rivals.forEach((rival, idx) => {
         const startDist = -(12 + idx * 6);
@@ -1300,7 +1513,7 @@ export default function KarachiRushGame() {
       rankRows.sort((a, b) => a.time - b.time);
       rankRows.forEach((r, i) => (r.rank = i + 1));
       setFinalStats({
-        rankings: rankRows.slice(0, 6),
+        rankings: rankRows,
         raceTime: raceTimer,
         bestLap: bestLapSec,
         coinsEarned: runCoins,
@@ -1365,7 +1578,13 @@ export default function KarachiRushGame() {
       const isMenuIdle = manPhase === "menu";
       // rival name tags are canvas-texture planes: only part of the race,
       // never part of the menu showroom shot
-      for (const tag of rivalTagMeshes) tag.visible = !isMenuIdle;
+      for (const tag of rivalTagMeshes) {
+        tag.visible = !isMenuIdle;
+        // Aim the plate at the camera on yaw only; from behind, a fixed plate
+        // showed every rival's name mirrored.
+        tag.getWorldPosition(tagAim);
+        tag.lookAt(camera.position.x, tagAim.y, camera.position.z);
+      }
 
       if (isRacing) raceTimer += dt;
 
@@ -1444,28 +1663,47 @@ export default function KarachiRushGame() {
 
       // 3. camera
       if (isMenuIdle) {
-        // menu idle shot: slow orbit around the parked rickshaw (autorush-style live scene)
+        // Hero shot: three-quarter rear, aimed down the road so the track bends
+        // away and the skyline sits behind the rickshaw. A slow breathing drift
+        // keeps it alive without ever leaving the composition, unlike the full
+        // orbit this replaced, which spent half its cycle staring across the
+        // road at nothing.
         const t = now / 1000;
-        const orbitAng = t * 0.14;
-        const orbitR = 14 + Math.sin(t * 0.4) * 1.2;
+        const back = 11.5 + Math.sin(t * 0.33) * 1.4;
+        const side = 5.4 + Math.cos(t * 0.27) * 0.9;
         camera.position.set(
-          playerPos.x + Math.sin(orbitAng) * orbitR,
-          playerPos.y + 4.2 + Math.sin(t * 0.8) * 0.2,
-          playerPos.z + Math.cos(orbitAng) * orbitR
+          playerPos.x - playerTangent.x * back + playerNormal.x * side,
+          playerPos.y + 4.6 + Math.sin(t * 0.5) * 0.25,
+          playerPos.z - playerTangent.z * back + playerNormal.z * side
+        );
+        camera.lookAt(
+          new THREE.Vector3(
+            playerPos.x + playerTangent.x * 8,
+            playerPos.y + 1.9,
+            playerPos.z + playerTangent.z * 8
+          )
         );
       } else if (crashTimer > 0) {
         camera.position.x += (Math.random() - 0.5) * 0.6;
         camera.position.y += (Math.random() - 0.5) * 0.4;
       } else {
-        const camFollowDist = ctrl.nitro && playerNitro > 1 ? 13 : 11;
+        // Portrait phones narrow the horizontal FOV to ~30 degrees, which turns
+        // the chase view into a close-up of the rear canopy. Pulling the camera
+        // back on a narrow aspect restores the road ahead.
+        const portraitBoost = THREE.MathUtils.clamp(0.78 / camera.aspect, 1, 1.9);
+        const camFollowDist = (ctrl.nitro && playerNitro > 1 ? 13 : 11) * portraitBoost;
         const targetCamPos = new THREE.Vector3()
           .copy(playerPos)
           .addScaledVector(playerTangent, -camFollowDist)
-          .add(new THREE.Vector3(0, 5.2, 0));
+          .add(new THREE.Vector3(0, 5.2 + (portraitBoost - 1) * 3.4, 0));
         camera.position.lerp(targetCamPos, 0.12);
       }
-      const lookY = isMenuIdle ? 2.2 : 2.0;
-      camera.lookAt(new THREE.Vector3(playerPos.x, playerPos.y + lookY, playerPos.z));
+      if (!isMenuIdle) {
+        const lookY = 2.0;
+        camera.lookAt(new THREE.Vector3(playerPos.x, playerPos.y + lookY, playerPos.z));
+      }
+      // The dome is huge but finite; re-centre it so it can never be escaped.
+      skyDome?.position.copy(camera.position);
       const targetFov = isMenuIdle ? 50 : 60 + (playerSpeed / 60) * 15 + (ctrl.nitro && playerNitro > 1 ? 8 : 0);
       camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1);
       camera.updateProjectionMatrix();
@@ -1477,7 +1715,7 @@ export default function KarachiRushGame() {
         if (mctx) {
           const W = mm.width, H = mm.height;
           mctx.clearRect(0, 0, W, H);
-          mctx.fillStyle = "rgba(11,16,38,0.85)";
+          mctx.fillStyle = "#241a30";
           mctx.fillRect(0, 0, W, H);
           // project spline points to 2D (x,z) scaled to fit
           let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -1489,14 +1727,21 @@ export default function KarachiRushGame() {
             minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
             minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
           }
-          const pad = 12;
+          // Backing store is 2× the CSS box (240px for a 120px frame), so every
+          // stroke width and dot radius is doubled to keep the same visual weight.
+          const pad = 18;
           const sx = (W - pad * 2) / (maxX - minX || 1);
           const sz = (H - pad * 2) / (maxZ - minZ || 1);
           const s = Math.min(sx, sz);
           const ox = pad + ((W - pad * 2) - (maxX - minX) * s) / 2 - minX * s;
           const oz = pad + ((H - pad * 2) - (maxZ - minZ) * s) / 2 - minZ * s;
-          mctx.strokeStyle = "#3a3a42";
-          mctx.lineWidth = 2;
+          // The track is a long, thin loop, so on a square map it occupies one
+          // axis only. Draw it as a dark casing under a lighter core so it
+          // survives at 120px instead of disappearing into the panel.
+          mctx.strokeStyle = "#4a3a58";
+          mctx.lineWidth = 10;
+          mctx.lineJoin = "round";
+          mctx.lineCap = "round";
           mctx.beginPath();
           pts.forEach((p, i) => {
             const x = p.x * s + ox;
@@ -1505,20 +1750,23 @@ export default function KarachiRushGame() {
           });
           mctx.closePath();
           mctx.stroke();
+          mctx.strokeStyle = "#7d6a8f";
+          mctx.lineWidth = 3;
+          mctx.stroke();
           // rival dots
           for (const rv of rivals) {
             const ru = ((rv.u % 1) + 1) % 1;
             const rp = spline.getPointAt(Math.min(0.999, ru));
-            mctx.fillStyle = "#d90429";
+            mctx.fillStyle = "#b9a992";
             mctx.beginPath();
-            mctx.arc(rp.x * s + ox, rp.z * s + oz, 2.5, 0, Math.PI * 2);
+            mctx.arc(rp.x * s + ox, rp.z * s + oz, 3.5, 0, Math.PI * 2);
             mctx.fill();
           }
           // player dot
           const pp = spline.getPointAt(Math.min(0.999, playerU));
-          mctx.fillStyle = "#f2b632";
+          mctx.fillStyle = "#ffb020";
           mctx.beginPath();
-          mctx.arc(pp.x * s + ox, pp.z * s + oz, 4, 0, Math.PI * 2);
+          mctx.arc(pp.x * s + ox, pp.z * s + oz, 6, 0, Math.PI * 2);
           mctx.fill();
         }
       }
@@ -1720,74 +1968,140 @@ export default function KarachiRushGame() {
     totalLapsRef.current = totalLaps;
   }, [totalLaps]);
 
+  // The race deposits coins straight into localStorage, so the wallet pill has
+  // to re-read the bank when the run ends or the player returns to the menu.
+  // Guarded so it only writes state when the value actually changed.
+  useEffect(() => {
+    const nextBank = readBank();
+    if (nextBank !== bank) setBank(nextBank);
+  }, [phase, readBank, bank]);
+
+  // Districts roll day -> sunset -> night as laps advance, so a finished race
+  // leaves the scene on the last district's phase. Restore the menu's TIME
+  // preview whenever the menu comes back, otherwise the row says DAY over a
+  // night sky.
+  useEffect(() => {
+    if (phase === "menu") engineRef.current?.setTimeMode(menuTimeMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, menuTimeMode]);
+
   // =============================================================
   // RENDER
   // =============================================================
   const curVehicle = vehicleById(selectedVehicle);
+  const curDifficulty = difficultyById(difficultyId);
+  const hudDistrict = DISTRICTS[Math.min(hud.lap - 1, DISTRICTS.length - 1)].name;
+  const racers = RIVALS.length + 1;
+  const playerRank = finalStats?.rankings.find((r) => r.name === "YOU")?.rank ?? 0;
+  const resultsTitle =
+    playerRank === 1 ? "CHAMPION" : playerRank > 0 ? `${ordinal(playerRank)} PLACE` : "RACE OVER";
 
   return (
     <div id="game-container">
       {loadingVisible && (
         <div className={`loading-screen ${loading ? "" : "loading-screen--out"}`}>
-          <div className="loading-title">KARACHI RUSH</div>
-          <div className="loading-subtitle">SADAR — II CHUNDRIGAR — CLIFTON</div>
-          <div className="loading-bar">
-            <div className="loading-bar-fill" />
-          </div>
-          <div className="loading-msg">LOADING DISTRICTS…</div>
-          <div className="loading-dots">
-            <span className="coin-dot" />
-            <span className="coin-dot" />
-            <span className="coin-dot" />
+          <div className="loading-mark">
+            <div className="loading-title">KARACHI RUSH</div>
+            <div className="loading-subtitle">SADAR · CHUNDRIGAR · CLIFTON</div>
+            <div className="loading-bar">
+              <div className="loading-bar-fill" />
+            </div>
+            <div className="loading-msg">LOADING DISTRICTS…</div>
           </div>
         </div>
       )}
       <div id="viewport" ref={viewportRef} />
 
-      {/* HUD */}
+      {/* ---------------------------------------------------------
+          HUD — three corners, empty middle
+          --------------------------------------------------------- */}
       {(phase === "racing" || phase === "countdown" || phase === "paused") && (
         <div className="game-hud">
-          <div className="hud-top-bar">
-            <div className="hud-left">
-              <div className="chip chip-pos">
-                <span className="pos-main">{hud.position}</span>
-                <span className="pos-total">/ 8</span>
-              </div>
+          <div className="hud-panel hud-top-left">
+            <div className="hud-pos">
+              <span className="pos-main">{ordinal(hud.position)}</span>
+              <span className="pos-total">/{racers}</span>
+            </div>
+            <div className="hud-row">
+              <span className="hud-k">LAP</span>
+              <span className="hud-v">
+                {hud.lap}/{totalLaps}
+              </span>
+            </div>
+            <div className="hud-row">
+              <span className="hud-k">TIME</span>
+              <span className="hud-v">{fmtTime(hud.lapTime)}</span>
+            </div>
+            <div className="hud-row">
+              <span className="hud-k">BEST</span>
+              <span className="hud-v dim">{hud.bestLap ? fmtTime(hud.bestLap) : "—"}</span>
+            </div>
+          </div>
 
-              <div className="chip chip-info">
-                <span className="chip-district">
-                  LAP {hud.lap}/{totalLaps} — {DISTRICTS[Math.min(hud.lap - 1, 2)].name}
-                </span>
-                <span className="chip-time">{fmtTime(hud.lapTime)}{hud.bestLap ? `  •  BEST ${fmtTime(hud.bestLap)}` : ""}</span>
-              </div>
+          <div className="hud-top-right">
+            <div className="minimap-frame">
+              <canvas id="minimap" className="minimap" width={240} height={240} ref={minimapRef} />
+            </div>
+            <div className="hud-district">{hudDistrict}</div>
+            <div className="hud-wallet">
+              <CoinIcon size={14} />
+              <span>{fmtNum(hud.runCoins)}</span>
+            </div>
+          </div>
 
-              <div className="chip-row">
-                <div className="chip chip-coin">
-                  <span className="coin-dot" /> {hud.runCoins}
-                </div>
-                <div className="chip chip-steps">
-                  {hud.steps} STEPS
-                </div>
-                <div className="chip chip-diff">
-                  {hud.difficulty}
-                </div>
-              </div>
+          <div className="hud-bottom-left">
+            <span className="speed-value">{hud.speed}</span>
+            <span className="speed-unit">km/h</span>
+          </div>
 
-              <div className="track-progress-bar">
-                <div className="progress-track-fill" style={{ width: `${((hud.lap - 1) / totalLaps) * 100}%` }} />
-                <div className="progress-player-pin" />
+          <div className="hud-bottom-right">
+            <div className="nitro-ring" title={`Nitro ${hud.nitro}%`}>
+              <svg className="nitro-arc" width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
+                <circle cx="32" cy="32" r="28" fill="none" stroke="var(--edge)" strokeWidth="4" />
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="28"
+                  fill="none"
+                  stroke="var(--marigold)"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray={NITRO_CIRC}
+                  strokeDashoffset={NITRO_CIRC * (1 - Math.min(100, Math.max(0, hud.nitro)) / 100)}
+                />
+              </svg>
+              <div className="nitro-core">
+                <BoltIcon size={16} />
+                <span className="nitro-pct">{Math.round(hud.nitro)}</span>
               </div>
             </div>
 
-            <div className="hud-right">
-              <button className="icon-btn" onClick={() => engineRef.current?.cycleTimeMode()}>
-                {SOUND_LABELS[hud.timeMode]}
+            <div className="hud-tools">
+              <button
+                type="button"
+                className="hud-btn"
+                aria-label={soundEnabled ? "Mute sound" : "Unmute sound"}
+                aria-pressed={!soundEnabled}
+                onClick={() => setSoundEnabled((v) => !v)}
+              >
+                {soundEnabled ? <SpeakerIcon size={18} /> : <SpeakerOffIcon size={18} />}
               </button>
-              <button className="icon-btn" onClick={() => setSoundEnabled((v) => !v)}>
-                {soundEnabled ? "🔊 SOUND" : "🔇 MUTED"}
+              <button
+                type="button"
+                className="hud-btn"
+                aria-label={`Time of day: ${TIME_LABELS[hud.timeMode]}. Change`}
+                title={TIME_LABELS[hud.timeMode]}
+                onClick={() => engineRef.current?.cycleTimeMode()}
+              >
+                <span className="hud-btn-label">{TIME_LABELS[hud.timeMode]}</span>
               </button>
-              <button className="icon-btn" onClick={() => engineRef.current?.togglePause()}>
-                {phase === "paused" ? "▶ RESUME" : "❚❚ PAUSE"}
+              <button
+                type="button"
+                className={`hud-btn ${phase === "paused" ? "hud-btn--on" : ""}`}
+                aria-label={phase === "paused" ? "Resume race" : "Pause race"}
+                onClick={() => engineRef.current?.togglePause()}
+              >
+                {phase === "paused" ? <PlayIcon size={18} /> : <PauseIcon size={18} />}
               </button>
             </div>
           </div>
@@ -1798,33 +2112,6 @@ export default function KarachiRushGame() {
             </div>
           )}
 
-          <div className="hud-bottom-bar">
-            <div className="speedo-cluster">
-              <div className={`chip speedo-card ${hud.nitro > 50 ? "hot" : ""}`}>
-                <span className="speed-value">{hud.speed}</span>
-                <span className="speed-unit">KM/H</span>
-              </div>
-              <div className="nitro-cluster">
-                <div className="nitro-label">
-                  <span>NITRO</span>
-                  <span>{hud.nitro}%</span>
-                </div>
-                <div className="nitro-bar-wrap">
-                  <div className="nitro-bar-fill" style={{ width: `${hud.nitro}%` }} />
-                </div>
-              </div>
-              <div className="chip chip-score">
-                <span className="chip-kv-label">SCORE</span>
-                <span className="chip-kv-value">{hud.score}</span>
-              </div>
-            </div>
-            <div className="chip chip-traps">
-              <span className="chip-kv-label">TRAPS</span>
-              <span className="chip-kv-value">{hud.trapsDodged}</span>
-            </div>
-          </div>
-
-          {/* Lap Banner */}
           {lapBanner && (
             <div className="lap-banner">
               <div className="lap-banner-kicker">LAP {lapBanner.lap}</div>
@@ -1833,269 +2120,460 @@ export default function KarachiRushGame() {
             </div>
           )}
 
-          {/* autorush-style HUD chrome */}
-          <canvas id="minimap" className="minimap" width={190} height={190} ref={minimapRef} />
-          {wrongWay && <div className="wrong-way">WRONG WAY!</div>}
+          {wrongWay && (
+            <div className="wrong-way">
+              <WarningIcon size={22} />
+              <span>WRONG WAY</span>
+            </div>
+          )}
         </div>
       )}
 
       {/* Countdown */}
       {phase === "countdown" && (
         <div className="countdown-overlay">
-          <div className={`countdown-number ${countdownNum === "GO!" ? "go" : ""}`}>{countdownNum}</div>
+          <div className={`countdown-number ${countdownNum === "GO!" ? "is-go" : ""}`}>{countdownNum}</div>
         </div>
       )}
 
-      {/* Start Menu */}
+      {/* ---------------------------------------------------------
+          MENU — left rail, live scene on the right
+          --------------------------------------------------------- */}
       {phase === "menu" && (
         <div className="screen-overlay menu-overlay">
-          <div className="modal-panel home-dock">
-            <div className="menu-ticker" aria-hidden="true">
-              <div className="menu-ticker-track">
-                <span>SADAR BAZAR ◆ II CHUNDRIGAR ROAD ◆ CLIFTON NIGHT LAP ◆ DRIFT FOR SCORE ◆ N FOR NITRO ◆ DODGE THE CONES ◆&nbsp;</span>
-                <span aria-hidden="true">SADAR BAZAR ◆ II CHUNDRIGAR ROAD ◆ CLIFTON NIGHT LAP ◆ DRIFT FOR SCORE ◆ N FOR NITRO ◆ DODGE THE CONES ◆&nbsp;</span>
+          <aside className="rail">
+            <div className="rail-head">
+              <div className="bank-pill">
+                <CoinIcon size={16} />
+                <span className="bank-value">{fmtNum(bank)}</span>
+                <span className="bank-label">BANK</span>
               </div>
+              <button
+                type="button"
+                className="rail-icon"
+                aria-label={soundEnabled ? "Mute sound" : "Unmute sound"}
+                aria-pressed={!soundEnabled}
+                onClick={() => setSoundEnabled((v) => !v)}
+              >
+                {soundEnabled ? <SpeakerIcon size={18} /> : <SpeakerOffIcon size={18} />}
+              </button>
+              <button
+                type="button"
+                className="rail-icon"
+                aria-label="Settings"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <GearIcon size={18} />
+              </button>
             </div>
-            <header className="home-top">
+
+            {/* Everything above and below this wrapper is pinned; only the
+                middle scrolls, so the one CTA is always on screen even at
+                1280x720 without shrinking the type. */}
+            <div className="rail-body">
+            <header className="brand">
               <div className="game-title">KARACHI RUSH</div>
-              <div className="game-subtitle">SADAR — II CHUNDRIGAR — CLIFTON</div>
+              <div className="game-subtitle">SADAR · CHUNDRIGAR · CLIFTON</div>
             </header>
 
-            <div className="bank-pill">
-              <span className="coin-dot coin-dot-lg" />
-              <span className="bank-value">{bank}</span>
-              <span className="bank-label">COIN BANK</span>
-            </div>
+            <section className="rail-group">
+              <div className="section-label">Rickshaw</div>
+              <div className="garage-grid">
+                {VEHICLES.map((v) => {
+                  const isOwned = v.price === 0 || unlocked.includes(v.id);
+                  const isActive = selectedVehicle === v.id;
+                  const canBuy = !isOwned && bank >= v.price;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      className={`select-card ${isActive ? "active" : ""} ${isOwned ? "" : "locked"}`}
+                      aria-pressed={isActive}
+                      aria-disabled={!isOwned && !canBuy}
+                      onClick={() => {
+                        if (isOwned) setSelectedVehicle(v.id);
+                        else if (canBuy) buyVehicle(v.id);
+                      }}
+                    >
+                      <span className="select-card-name">{v.name}</span>
+                      <span className="select-card-stats">
+                        {v.topSpeed} <em>km/h</em>
+                      </span>
+                      <span className="select-card-tail">
+                        {isOwned ? (
+                          isActive ? (
+                            <span className="owned-tag">EQUIPPED</span>
+                          ) : null
+                        ) : (
+                          <>
+                            <CoinIcon size={12} />
+                            {fmtNum(v.price)}
+                          </>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
 
-            <div className="home-picker">
-              <button className="arrow" aria-label="Previous rickshaw" onClick={() => {
-                const idx = VEHICLES.findIndex((v) => v.id === selectedVehicle);
-                const prev = VEHICLES[(idx - 1 + VEHICLES.length) % VEHICLES.length];
-                if (prev.price === 0 || unlocked.includes(prev.id)) setSelectedVehicle(prev.id);
-              }}>‹</button>
-              <button className="arrow" aria-label="Next rickshaw" onClick={() => {
-                const idx = VEHICLES.findIndex((v) => v.id === selectedVehicle);
-                const next = VEHICLES[(idx + 1) % VEHICLES.length];
-                if (next.price === 0 || unlocked.includes(next.id)) setSelectedVehicle(next.id);
-              }}>›</button>
-            </div>
-
-            {/* keep all vehicles selectable in a compact grid below */}
-            <div className="section-label">RICKSHAW GARAGE</div>
-            <div className="selection-grid garage-grid compact">
-              {VEHICLES.map((v, i) => {
-                const isOwned = v.price === 0 || unlocked.includes(v.id);
-                const isActive = selectedVehicle === v.id;
-                return (
-                  <div
-                    key={v.id}
-                    className={`select-card ${isActive ? "active" : ""} ${isOwned ? "" : "locked"}`}
-                    style={{ "--i": i } as CSSProperties}
-                    onClick={() => { if (isOwned) setSelectedVehicle(v.id); }}
+            <section className="rail-group">
+              <div className="section-label">Difficulty</div>
+              <div className="segmented" role="group" aria-label="Difficulty">
+                {DIFFICULTIES.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    className={`seg ${difficultyId === d.id ? "is-on" : ""}`}
+                    aria-pressed={difficultyId === d.id}
+                    onClick={() => setDifficultyId(d.id)}
                   >
-                    <div className="select-card-name">{v.name}</div>
-                    <div className="select-card-desc">{v.subtitle}</div>
-                    <div className="select-card-stats">TOP {v.topSpeed} KM/H</div>
-                    {!isOwned ? (
-                      <button
-                        className={`buy-btn ${bank >= v.price ? "" : "buy-btn-disabled"}`}
-                        onClick={(e) => { e.stopPropagation(); buyVehicle(v.id); }}
-                      >
-                        BUY {v.price}
-                      </button>
-                    ) : isActive ? (
-                      <div className="owned-tag">EQUIPPED</div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              <p className="seg-note">{curDifficulty.tagline}</p>
+            </section>
 
-            <div className="section-label">DIFFICULTY</div>
-            <div className="selection-grid diff-grid">
-              {DIFFICULTIES.map((d, i) => (
-                <div
-                  key={d.id}
-                  className={`select-card ${difficultyId === d.id ? "active" : ""}`}
-                  style={{ "--i": i } as CSSProperties}
-                  onClick={() => setDifficultyId(d.id)}
-                >
-                  <div className="select-card-name">{d.label}</div>
-                  <div className="select-card-desc">{d.tagline}</div>
+            {/* LAPS and TIME are both three-way radios, so they share one row.
+                Side by side they cost 66 px instead of 152 px, which is what
+                lets the rail fit 1280x720 with no scrolling. */}
+            <div className="rail-pair">
+              <section className="rail-group">
+                <div className="section-label">Laps</div>
+                <div className="segmented" role="group" aria-label="Laps">
+                  {[1, 3, 5].map((laps) => (
+                    <button
+                      key={laps}
+                      type="button"
+                      className={`seg ${totalLaps === laps ? "is-on" : ""}`}
+                      aria-pressed={totalLaps === laps}
+                      onClick={() => setTotalLaps(laps)}
+                    >
+                      {laps}
+                    </button>
+                  ))}
                 </div>
-              ))}
+              </section>
+
+              <section className="rail-group">
+                <div className="section-label">Time</div>
+                <div className="segmented" role="group" aria-label="Time of day">
+                  {(["day", "sunset", "night"] as TimeMode[]).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`seg ${menuTimeMode === t ? "is-on" : ""}`}
+                      aria-pressed={menuTimeMode === t}
+                      onClick={() => {
+                        menuTimeModeRef.current = t;
+                        setMenuTimeMode(t);
+                        engineRef.current?.setTimeMode(t);
+                      }}
+                    >
+                      {TIME_LABELS[t]}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </div>
             </div>
 
-            <div className="lap-choose-row">
-              {[1, 3, 5].map((laps) => (
-                <button
-                  key={laps}
-                  className={`icon-btn ${totalLaps === laps ? "active" : ""}`}
-                  onClick={() => setTotalLaps(laps)}
-                >
-                  {laps} LAP{laps > 1 ? "S" : ""}
-                </button>
-              ))}
-            </div>
-
-            <div className="go-row">
-              <button className="action-btn" onClick={() => engineRef.current?.startRace()}>
-                START RUSH <span className="btn-arrow" aria-hidden="true">▶</span>
-              </button>
-            </div>
-
-            <div className="home-row">
-              <button className="btn sec-btn setup-btn" onClick={() => setSetupOpen(true)}>
-                Race setup
-              </button>
-              <button className="btn sec-btn setup-btn" onClick={() => setSettingsOpen(true)}>
-                Settings
-              </button>
-            </div>
+            <button type="button" className="action-btn" onClick={() => engineRef.current?.startRace()}>
+              <span>START RUSH</span>
+              <span className="cta-urdu" lang="ur">
+                چلو
+              </span>
+            </button>
 
             <div className="controls-hint">
-              W/↑ THROTTLE • S/↓ BRAKE • A/D STEER • SPACE DRIFT • N NITRO • P PAUSE
+              <span>
+                <kbd>W</kbd>
+                <kbd>S</kbd> throttle · <kbd>A</kbd>
+                <kbd>D</kbd> steer
+              </span>
+              <span>
+                <kbd>SPACE</kbd> drift · <kbd>N</kbd> nitro · <kbd>P</kbd> pause
+              </span>
             </div>
-          </div>
+          </aside>
         </div>
       )}
 
-      {/* Race setup sheet */}
-      {phase === "menu" && setupOpen && (
-        <div className="screen-overlay" onClick={() => setSetupOpen(false)}>
-          <div className="modal-panel panel-slim" onClick={(e) => e.stopPropagation()}>
-            <div className="game-title" style={{ fontSize: 28 }}>RACE SETUP</div>
-            <div className="game-subtitle">Choose how you race</div>
-            <div className="section-label">LAPS</div>
-            <div className="lap-choose-row">
-              {[1, 3, 5].map((laps) => (
-                <button
-                  key={laps}
-                  className={`icon-btn ${totalLaps === laps ? "active" : ""}`}
-                  onClick={() => setTotalLaps(laps)}
-                >
-                  {laps}
-                </button>
-              ))}
-            </div>
-            <div className="section-label">RIVALS</div>
-            <div className="selection-grid diff-grid">
-              {DIFFICULTIES.map((d) => (
-                <div
-                  key={d.id}
-                  className={`select-card ${difficultyId === d.id ? "active" : ""}`}
-                  onClick={() => setDifficultyId(d.id)}
-                >
-                  <div className="select-card-name">{d.label}</div>
-                  <div className="select-card-desc">{d.tagline}</div>
-                </div>
-              ))}
-            </div>
-            <div className="section-label">TIME</div>
-            <div className="lap-choose-row">
-              {(["day", "sunset", "night"] as TimeMode[]).map((t) => (
-                <button
-                  key={t}
-                  className={`icon-btn ${menuTimeMode === t ? "active" : ""}`}
-                  onClick={() => { setMenuTimeMode(t); engineRef.current?.setTimeMode(t); }}
-                >
-                  {t.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            <button className="action-btn" onClick={() => setSetupOpen(false)}>DONE</button>
-          </div>
-        </div>
-      )}
-
-      {/* Settings */}
+      {/* ---------------------------------------------------------
+          SETTINGS
+          --------------------------------------------------------- */}
       {phase === "menu" && settingsOpen && (
-        <div className="screen-overlay" onClick={() => setSettingsOpen(false)}>
+        <div className="screen-overlay screen-overlay--sheet" onClick={() => setSettingsOpen(false)}>
           <div className="modal-panel panel-slim" onClick={(e) => e.stopPropagation()}>
-            <div className="game-title" style={{ fontSize: 28 }}>SETTINGS</div>
-            <div className="game-subtitle">Sound & controls</div>
-            <div className="section-label">SOUND</div>
-            <button className="action-btn secondary" onClick={() => setSoundEnabled((v) => !v)}>
-              {soundEnabled ? "🔊 SOUND ON" : "🔇 MUTED"}
+            <div className="panel-head">
+              <h2 className="panel-title">SETTINGS</h2>
+              <button
+                type="button"
+                className="panel-close"
+                aria-label="Close settings"
+                onClick={() => setSettingsOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="setting-row">
+              <span className="setting-k">Sound</span>
+              <div className="segmented segmented--sm" role="group" aria-label="Sound">
+                <button
+                  type="button"
+                  className={`seg ${soundEnabled ? "" : "is-on"}`}
+                  aria-pressed={!soundEnabled}
+                  onClick={() => setSoundEnabled(false)}
+                >
+                  OFF
+                </button>
+                <button
+                  type="button"
+                  className={`seg ${soundEnabled ? "is-on" : ""}`}
+                  aria-pressed={soundEnabled}
+                  onClick={() => setSoundEnabled(true)}
+                >
+                  ON
+                </button>
+              </div>
+            </div>
+
+            <div className="section-label">Controls</div>
+            <dl className="keymap">
+              <dt>
+                <kbd>W</kbd>
+                <kbd>S</kbd>
+              </dt>
+              <dd>Throttle and brake</dd>
+              <dt>
+                <kbd>A</kbd>
+                <kbd>D</kbd>
+              </dt>
+              <dd>Steer left and right</dd>
+              <dt>
+                <kbd>SPACE</kbd>
+              </dt>
+              <dd>Handbrake drift — scores while it holds</dd>
+              <dt>
+                <kbd>N</kbd>
+              </dt>
+              <dd>Nitro boost</dd>
+              <dt>
+                <kbd>P</kbd>
+                <kbd>ESC</kbd>
+              </dt>
+              <dd>Pause</dd>
+            </dl>
+
+            <button type="button" className="action-btn" onClick={() => setSettingsOpen(false)}>
+              DONE
             </button>
-            <div className="section-label">CONTROLS</div>
-            <div className="controls-hint" style={{ textAlign: "left", lineHeight: 1.6 }}>
-              W/↑ THROTTLE • S/↓ BRAKE • A/D STEER<br />
-              SPACE DRIFT • N NITRO • P / ESC PAUSE<br />
-              CYCLE TIME: button in HUD
-            </div>
-            <button className="action-btn" onClick={() => setSettingsOpen(false)}>DONE</button>
           </div>
         </div>
       )}
 
-      {/* Pause */}
+      {/* ---------------------------------------------------------
+          PAUSE
+          --------------------------------------------------------- */}
       {phase === "paused" && (
-        <div className="screen-overlay">
-          <div className="modal-panel panel-slim">
-            <div className="game-title">PAUSED</div>
-            <div className="game-subtitle">{curVehicle.name} — LAP {hud.lap} OF {totalLaps}</div>
-            <button className="action-btn" onClick={() => engineRef.current?.togglePause()}>RESUME</button>
-            <button className="action-btn secondary" onClick={() => engineRef.current?.quitRace()}>MAIN MENU</button>
+        <div className="screen-overlay screen-overlay--center">
+          <div className="modal-panel panel-slim pause-panel">
+            <div className="panel-title">PAUSED</div>
+            <div className="panel-sub">
+              {curVehicle.name} · LAP {hud.lap} / {totalLaps}
+            </div>
+            <button type="button" className="action-btn" onClick={() => engineRef.current?.togglePause()}>
+              RESUME
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => engineRef.current?.quitRace()}>
+              MAIN MENU
+            </button>
           </div>
         </div>
       )}
 
-      {/* Results */}
+      {/* ---------------------------------------------------------
+          RESULTS
+          --------------------------------------------------------- */}
       {phase === "finished" && finalStats && (
-        <div className="screen-overlay">
-          <div className="modal-panel panel-wide">
-            <div className="game-title">
-              {finalStats.rankings[0]?.name === "YOU" ? "CHAMPION!" : "RACE FINISHED"}
-            </div>
-            <div className="game-subtitle">{finalStats.difficulty} — {fmtTime(finalStats.raceTime)}</div>
-
-            <div className="results-grid">
-              <div className="stat-box"><span className="stat-num gold">{finalStats.coinsEarned}</span><span className="stat-label">COINS EARNED</span></div>
-              <div className="stat-box"><span className="stat-num">{Math.round(finalStats.raceTime)}</span><span className="stat-label">RACE SEC</span></div>
-              <div className="stat-box"><span className="stat-num">{finalStats.bestLap ? fmtTime(finalStats.bestLap) : "--"}</span><span className="stat-label">BEST LAP</span></div>
-              <div className="stat-box"><span className="stat-num">{finalStats.steps}</span><span className="stat-label">STEPS</span></div>
-              <div className="stat-box"><span className="stat-num">{finalStats.distanceM}m</span><span className="stat-label">DISTANCE</span></div>
-              <div className="stat-box"><span className="stat-num">{finalStats.trapsDodged}</span><span className="stat-label">TRAPS DODGED</span></div>
-              <div className="stat-box"><span className="stat-num">{finalStats.crashes}</span><span className="stat-label">CRASHES</span></div>
-              <div className="stat-box"><span className="stat-num">{finalStats.driftScore}</span><span className="stat-label">DRIFT SCORE</span></div>
+        <div className="screen-overlay screen-overlay--center">
+          <div className="modal-panel panel-wide results">
+            <div className="results-head">
+              <div className="results-kicker">FINAL STANDINGS</div>
+              <div className="results-title">{resultsTitle}</div>
+              <div className="results-sub">
+                {finalStats.difficulty.toUpperCase()} · {fmtTime(finalStats.raceTime)} · {finalStats.laps.length} LAP
+                {finalStats.laps.length > 1 ? "S" : ""}
+              </div>
             </div>
 
-            <div className="lap-summary-list">
-              {finalStats.laps.map((l) => (
-                <div key={l.lap} className="lap-summary-row">
-                  <span className="lap-summary-k">LAP {l.lap} — {l.district}</span>
-                  <span className="lap-summary-v">{l.timeSec.toFixed(1)}s • {l.coins} coins • {l.trapsDodged} traps</span>
+            <div className="results-body">
+              <div className="results-col">
+                <div className="section-label">Standings</div>
+                <div className="rankings-list">
+                  {finalStats.rankings.map((r) => (
+                    <div key={`${r.rank}-${r.name}`} className={`ranking-row ${r.name === "YOU" ? "you" : ""}`}>
+                      <span className="rank-n">{r.rank}</span>
+                      <span className="rank-name">{r.name}</span>
+                      <span className="rank-time tab">{fmtTime(r.time)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            <div className="rankings-list">
-              {finalStats.rankings.slice(0, 5).map((r) => (
-                <div key={r.rank} className={`ranking-row ${r.name === "YOU" ? "you" : ""}`}>
-                  <span>#{r.rank} {r.name}</span>
-                  <span>{fmtTime(r.time)}</span>
+                <div className="section-label" style={{ marginTop: 20 }}>
+                  Laps
                 </div>
-              ))}
+                <div className="lap-summary-list">
+                  {finalStats.laps.map((l) => (
+                    <div key={l.lap} className="lap-summary-row">
+                      <span className="lap-summary-k">
+                        L{l.lap} · {l.district}
+                      </span>
+                      <span className="lap-summary-v">
+                        {l.timeSec.toFixed(1)}s · {l.coins}c · {l.trapsDodged} traps
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="results-col">
+                <div className="payout">
+                  <span className="payout-num">
+                    <CoinIcon size={28} />
+                    {fmtNum(finalStats.coinsEarned)}
+                  </span>
+                  <span className="payout-label">Coins earned</span>
+                </div>
+                <div className="bank-line">
+                  <span>New balance</span>
+                  <strong>{fmtNum(bank)}</strong>
+                </div>
+
+                <div className="stat-grid">
+                  <div className="stat-box">
+                    <span className="stat-num">{fmtTime(finalStats.raceTime)}</span>
+                    <span className="stat-label">Race time</span>
+                  </div>
+                  <div className="stat-box">
+                    <span className="stat-num">{finalStats.bestLap ? fmtTime(finalStats.bestLap) : "—"}</span>
+                    <span className="stat-label">Best lap</span>
+                  </div>
+                  <div className="stat-box">
+                    <span className="stat-num">{fmtNum(finalStats.distanceM)}m</span>
+                    <span className="stat-label">Distance</span>
+                  </div>
+                  <div className="stat-box">
+                    <span className="stat-num">{fmtNum(finalStats.steps)}</span>
+                    <span className="stat-label">Steps</span>
+                  </div>
+                  <div className="stat-box">
+                    <span className="stat-num">{finalStats.trapsDodged}</span>
+                    <span className="stat-label">Traps</span>
+                  </div>
+                  <div className="stat-box">
+                    <span className="stat-num">{finalStats.crashes}</span>
+                    <span className="stat-label">Crashes</span>
+                  </div>
+                  <div className="stat-box">
+                    <span className="stat-num">{fmtNum(finalStats.driftScore)}</span>
+                    <span className="stat-label">Drift</span>
+                  </div>
+                  <div className="stat-box">
+                    <span className="stat-num">{finalStats.laps.length}</span>
+                    <span className="stat-label">Laps done</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <button className="action-btn" onClick={() => engineRef.current?.startRace()}>RACE AGAIN</button>
-            <button className="action-btn secondary" onClick={() => engineRef.current?.quitRace()}>MAIN MENU</button>
+            <div className="results-actions">
+              <button type="button" className="action-btn" onClick={() => engineRef.current?.startRace()}>
+                RACE AGAIN
+              </button>
+              <button type="button" className="btn-ghost" onClick={() => engineRef.current?.quitRace()}>
+                MAIN MENU
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Mobile touch controls */}
+      {/* ---------------------------------------------------------
+          TOUCH CONTROLS
+          --------------------------------------------------------- */}
       <div className="mobile-controls">
         <div className="touch-cluster-left">
-          <div className="touch-btn" onTouchStart={() => (controlsRef.current.steer = -1)} onTouchEnd={() => (controlsRef.current.steer = 0)}>◀</div>
-          <div className="touch-btn" onTouchStart={() => (controlsRef.current.steer = 1)} onTouchEnd={() => (controlsRef.current.steer = 0)}>▶</div>
+          <button
+            type="button"
+            className="touch-btn"
+            aria-label="Steer left"
+            onPointerDown={() => (controlsRef.current.steer = -1)}
+            onPointerUp={() => (controlsRef.current.steer = 0)}
+            onPointerLeave={() => (controlsRef.current.steer = 0)}
+            onPointerCancel={() => (controlsRef.current.steer = 0)}
+          >
+            <ArrowLeftIcon size={22} />
+          </button>
+          <button
+            type="button"
+            className="touch-btn"
+            aria-label="Steer right"
+            onPointerDown={() => (controlsRef.current.steer = 1)}
+            onPointerUp={() => (controlsRef.current.steer = 0)}
+            onPointerLeave={() => (controlsRef.current.steer = 0)}
+            onPointerCancel={() => (controlsRef.current.steer = 0)}
+          >
+            <ArrowRightIcon size={22} />
+          </button>
         </div>
         <div className="touch-cluster-right">
-          <div className="touch-btn nitro" onTouchStart={() => (controlsRef.current.nitro = true)} onTouchEnd={() => (controlsRef.current.nitro = false)}>⚡</div>
-          <div className="touch-btn drift" onTouchStart={() => (controlsRef.current.drift = true)} onTouchEnd={() => (controlsRef.current.drift = false)}>DRIFT</div>
-          <div className="touch-btn" onTouchStart={() => (controlsRef.current.brake = 1)} onTouchEnd={() => (controlsRef.current.brake = 0)}>🛑</div>
-          <div className="touch-btn go" onTouchStart={() => (controlsRef.current.throttle = 1)} onTouchEnd={() => (controlsRef.current.throttle = 0)}>GO</div>
+          <button
+            type="button"
+            className="touch-btn nitro"
+            aria-label="Nitro"
+            onPointerDown={() => (controlsRef.current.nitro = true)}
+            onPointerUp={() => (controlsRef.current.nitro = false)}
+            onPointerLeave={() => (controlsRef.current.nitro = false)}
+            onPointerCancel={() => (controlsRef.current.nitro = false)}
+          >
+            <BoltIcon size={22} />
+          </button>
+          <button
+            type="button"
+            className="touch-btn drift"
+            aria-label="Drift"
+            onPointerDown={() => (controlsRef.current.drift = true)}
+            onPointerUp={() => (controlsRef.current.drift = false)}
+            onPointerLeave={() => (controlsRef.current.drift = false)}
+            onPointerCancel={() => (controlsRef.current.drift = false)}
+          >
+            DRIFT
+          </button>
+          <button
+            type="button"
+            className="touch-btn"
+            aria-label="Brake"
+            onPointerDown={() => (controlsRef.current.brake = 1)}
+            onPointerUp={() => (controlsRef.current.brake = 0)}
+            onPointerLeave={() => (controlsRef.current.brake = 0)}
+            onPointerCancel={() => (controlsRef.current.brake = 0)}
+          >
+            BRAKE
+          </button>
+          <button
+            type="button"
+            className="touch-btn go"
+            aria-label="Throttle"
+            onPointerDown={() => (controlsRef.current.throttle = 1)}
+            onPointerUp={() => (controlsRef.current.throttle = 0)}
+            onPointerLeave={() => (controlsRef.current.throttle = 0)}
+            onPointerCancel={() => (controlsRef.current.throttle = 0)}
+          >
+            GO
+          </button>
         </div>
       </div>
     </div>

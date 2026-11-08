@@ -1,10 +1,44 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Bungee, Noto_Naskh_Arabic, Teko } from "next/font/google";
 import "./globals.css";
 
+// Wordmark + headings. Used once per screen so the condensed signage look
+// stays special instead of turning into body copy.
+const bungee = Bungee({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-display",
+  display: "swap",
+});
+
+// Body, labels and HUD numerals. Teko's tall x-height keeps 14px readable and
+// its tabular-ish digits stop the speedometer from jittering.
+const teko = Teko({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-body",
+  display: "swap",
+});
+
+// Just the one word on the start button.
+const notoNaskh = Noto_Naskh_Arabic({
+  subsets: ["arabic"],
+  weight: "400",
+  variable: "--font-urdu",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "Auto Rush 3D: Grand Prix | Auto-Rickshaw 3D Racing Game",
+  title: "Karachi Rush — Auto-Rickshaw Racing",
   description:
-    "Race an authentic auto-rickshaw against 7 rivals through Gurugram Cyber City, Karachi Grand Prix, and Delhi Heritage Circuit in full 3D with drift physics, nitro boost, and dynamic night racing.",
+    "Race a Karachi auto-rickshaw through Saddar, II Chundrigar and Clifton. Drift physics, nitro, three circuits of night racing — all in 3D in your browser.",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#120d18",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({
@@ -13,7 +47,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${bungee.variable} ${teko.variable} ${notoNaskh.variable}`}
+    >
       <body>{children}</body>
     </html>
   );
