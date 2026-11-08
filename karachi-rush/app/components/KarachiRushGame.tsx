@@ -169,8 +169,11 @@ export default function KarachiRushGame() {
   const [difficultyId, setDifficultyId] = useState<string>("medium");
   const [totalLaps, setTotalLaps] = useState<number>(3);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [musicVolume, setMusicVolume] = useState<number>(80);
+  const [effectsVolume, setEffectsVolume] = useState<number>(80);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [menuTimeMode, setMenuTimeMode] = useState<TimeMode>("day");
+  const [menuWeather, setMenuWeather] = useState<"clear" | "rain">("clear");
   const [phase, setPhase] = useState<Phase>("menu");
   const [loading, setLoading] = useState(true);
   const [loadingVisible, setLoadingVisible] = useState(true);
@@ -207,6 +210,7 @@ export default function KarachiRushGame() {
   // needed because the engine is built once and would otherwise close over the
   // initial "day".
   const menuTimeModeRef = useRef<TimeMode>("day");
+  const menuWeatherRef = useRef<"clear" | "rain">("clear");
 
   // ---- engine trigger surface
   const engineRef = useRef<{
@@ -233,6 +237,8 @@ export default function KarachiRushGame() {
     playThud: () => void;
     playCountdown: () => void;
     setMuted: (muted: boolean) => void;
+    setMusicVolume: (v: number) => void;
+    setEffectsVolume: (v: number) => void;
   } | null>(null);
 
   // -------------------------------------------------------------
@@ -242,6 +248,13 @@ export default function KarachiRushGame() {
     soundEnabledRef.current = soundEnabled;
     if (soundRef.current) soundRef.current.setMuted(!soundEnabled);
   }, [soundEnabled]);
+
+  useEffect(() => {
+    if (soundRef.current) {
+      soundRef.current.setMusicVolume(musicVolume);
+      soundRef.current.setEffectsVolume(effectsVolume);
+    }
+  }, [musicVolume, effectsVolume]);
 
   useEffect(() => {
     let audioCtx: AudioContext | null = null;
@@ -532,6 +545,16 @@ export default function KarachiRushGame() {
           }
           if (sfxGain && audioCtx) {
             sfxGain.gain.setTargetAtTime(muted ? 0 : 0.8, audioCtx.currentTime, 0.05);
+          }
+        },
+        setMusicVolume: (v: number) => {
+          if (musicGain && audioCtx) {
+            musicGain.gain.setTargetAtTime(v / 100, audioCtx.currentTime, 0.05);
+          }
+        },
+        setEffectsVolume: (v: number) => {
+          if (sfxGain && audioCtx) {
+            sfxGain.gain.setTargetAtTime(v / 100, audioCtx.currentTime, 0.05);
           }
         },
       };
@@ -1474,7 +1497,7 @@ export default function KarachiRushGame() {
     // =========================================================
     // TIME OF DAY
     // =========================================================
-    function applyTimeMode(mode: TimeMode) {
+    function applyTimeMode(mode: TimeMode, weather: "clear" | "rain" = "clear") {
       if (!scene || !ambientLight || !dirLight || !headLight) return;
       if (mode === "day") {
         scene.background = new THREE.Color(TRACK.daySky);
@@ -1511,9 +1534,16 @@ export default function KarachiRushGame() {
         ambientLight.groundColor.set(0x181b26);
         dirLight.intensity = 0.48;
         dirLight.color.set(0x8fa4d2);
-        // Three.js r155+ uses physical spotlight units, so the old 3.5 lit
-        // nothing at 20 m. At decay 2 this gives ~22 lux ten metres out.
         headLight.intensity = 2200;
+      }
+      // Rain: denser, darker fog and a dimmer sky so the world feels wet.
+      if (weather === "rain") {
+        scene.fog = new THREE.FogExp2(
+          scene.background as THREE.Color,
+          (scene.background as THREE.Color).getHex() === TRACK.nightSky ? 0.0035 : 0.0028
+        );
+        ambientLight.intensity *= 0.75;
+        dirLight.intensity *= 0.8;
       }
       const winInt = mode === "night" ? 1.15 : mode === "sunset" ? 0.45 : 0.06;
       for (const m of windowMats) m.emissiveIntensity = winInt;
@@ -1554,7 +1584,7 @@ export default function KarachiRushGame() {
       generateRaceObjects(difficultyRef.current);
       // Lap 1 opens on the menu's chosen TIME (default is day, as before);
       // each subsequent district rolls its own phase from lap 2 on.
-      applyTimeMode(menuTimeModeRef.current);
+      applyTimeMode(menuTimeModeRef.current, menuWeatherRef.current);
       onBanner({ district: "SADAR", tagline: "EMPRESS MARKET • CHAAR MINAR", lap: 1, coins: -1, traps: 0, time: 0 });
       rivals.forEach((rival, idx) => {
         const startDist = -(12 + idx * 6);
@@ -1600,10 +1630,10 @@ export default function KarachiRushGame() {
         const curBg = scene.background as THREE.Color | null;
         if (!curBg) return applyTimeMode("day");
         if (curBg.getHex() === TRACK.daySky) applyTimeMode("sunset");
-        else if (curBg.getHex() === TRACK.sunsetSky) applyTimeMode("night");
-        else applyTimeMode("day");
+        else if (curBg.getHex() === TRACK.sunsetSky) applyTimeMode("night", menuWeatherRef.current);
+        else applyTimeMode("day", menuWeatherRef.current);
       },
-      setTimeMode: (m: TimeMode) => applyTimeMode(m),
+      setTimeMode: (m: TimeMode) => applyTimeMode(m, menuWeatherRef.current),
       quitRace: () => {
         if (countdownInterval) clearInterval(countdownInterval);
         countdownInterval = null;
@@ -2218,6 +2248,21 @@ export default function KarachiRushGame() {
 
   return (
     <div id="game-container">
+      {menuWeather === "rain" && (
+        <div className="weather-drop" aria-hidden="true">
+          {[...Array(120)].map((_, i) => (
+            <div
+              key={i}
+              className="weather-drop-line"
+              style={{
+                left: `${Math.random() * 100}vw`,
+                animationDelay: `${Math.random() * 0.8}s`,
+                animationDuration: `${0.4 + Math.random() * 0.4}s`,
+              }}
+            />
+          ))}
+        </div>
+      )}
       {loadingVisible && (
         <div className={`loading-screen ${loading ? "" : "loading-screen--out"}`}>
           <div className="loading-mark">
@@ -2419,6 +2464,35 @@ export default function KarachiRushGame() {
                       <span className="select-card-stats">
                         {v.topSpeed} <em>km/h</em>
                       </span>
+                      <div className="select-card-stat-row">
+                        <div className="select-card-stat">
+                          <span className="select-card-stat-k">SPD</span>
+                          <div className="select-card-stat-bar">
+                            <span
+                              className="select-card-stat-fill"
+                              style={{ width: `${Math.round((v.topSpeed / 50) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="select-card-stat">
+                          <span className="select-card-stat-k">ACC</span>
+                          <div className="select-card-stat-bar">
+                            <span
+                              className="select-card-stat-fill"
+                              style={{ width: `${Math.round((v.accel / 14) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="select-card-stat">
+                          <span className="select-card-stat-k">HND</span>
+                          <div className="select-card-stat-bar">
+                            <span
+                              className="select-card-stat-fill"
+                              style={{ width: `${Math.round((v.handling / 1.2) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
                       <span className="select-card-tail">
                         {isOwned ? (
                           isActive ? (
@@ -2496,6 +2570,35 @@ export default function KarachiRushGame() {
                   ))}
                 </div>
               </section>
+
+              {/* Weather toggle — cosmetic only, does not change handling. */}
+              <section className="rail-group">
+                <div className="section-label">Weather</div>
+                <div className="segmented" role="group" aria-label="Weather">
+                  <button
+                    type="button"
+                    className={`seg ${menuWeather === "clear" ? "is-on" : ""}`}
+                    aria-pressed={menuWeather === "clear"}
+                    onClick={() => {
+                      menuWeatherRef.current = "clear";
+                      setMenuWeather("clear");
+                    }}
+                  >
+                    CLEAR
+                  </button>
+                  <button
+                    type="button"
+                    className={`seg ${menuWeather === "rain" ? "is-on" : ""}`}
+                    aria-pressed={menuWeather === "rain"}
+                    onClick={() => {
+                      menuWeatherRef.current = "rain";
+                      setMenuWeather("rain");
+                    }}
+                  >
+                    RAIN
+                  </button>
+                </div>
+              </section>
             </div>
             </div>
 
@@ -2513,7 +2616,7 @@ export default function KarachiRushGame() {
                 <kbd>D</kbd> steer
               </span>
               <span>
-                <kbd>SPACE</kbd> drift · <kbd>N</kbd> nitro · <kbd>P</kbd> pause
+                <kbd>SPACE</kbd> drift · <kbd>N</kbd> nitro · <kbd>P</kbd> pause · <kbd>H</kbd> horn
               </span>
             </div>
           </aside>
@@ -2539,23 +2642,46 @@ export default function KarachiRushGame() {
             </div>
 
             <div className="setting-row">
-              <span className="setting-k">Sound</span>
-              <div className="segmented segmented--sm" role="group" aria-label="Sound">
+              <span className="setting-k">Music</span>
+              <div className="volume-row">
                 <button
                   type="button"
-                  className={`seg ${soundEnabled ? "" : "is-on"}`}
-                  aria-pressed={!soundEnabled}
-                  onClick={() => setSoundEnabled(false)}
+                  className="vol-btn"
+                  aria-label="Music down"
+                  onClick={() => setMusicVolume((v) => Math.max(0, v - 10))}
                 >
-                  OFF
+                  −
                 </button>
+                <span className="vol-val">{musicVolume}%</span>
                 <button
                   type="button"
-                  className={`seg ${soundEnabled ? "is-on" : ""}`}
-                  aria-pressed={soundEnabled}
-                  onClick={() => setSoundEnabled(true)}
+                  className="vol-btn"
+                  aria-label="Music up"
+                  onClick={() => setMusicVolume((v) => Math.min(100, v + 10))}
                 >
-                  ON
+                  +
+                </button>
+              </div>
+            </div>
+            <div className="setting-row">
+              <span className="setting-k">Effects</span>
+              <div className="volume-row">
+                <button
+                  type="button"
+                  className="vol-btn"
+                  aria-label="Effects down"
+                  onClick={() => setEffectsVolume((v) => Math.max(0, v - 10))}
+                >
+                  −
+                </button>
+                <span className="vol-val">{effectsVolume}%</span>
+                <button
+                  type="button"
+                  className="vol-btn"
+                  aria-label="Effects up"
+                  onClick={() => setEffectsVolume((v) => Math.min(100, v + 10))}
+                >
+                  +
                 </button>
               </div>
             </div>

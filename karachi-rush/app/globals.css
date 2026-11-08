@@ -300,10 +300,11 @@ button:focus-visible,
 
 .game-title {
   font-family: var(--display);
-  font-size: 40px;
-  line-height: 0.94;
-  letter-spacing: 0.01em;
+  font-size: 48px;
+  line-height: 0.9;
+  letter-spacing: 0.02em;
   color: var(--cream);
+  text-transform: uppercase;
 }
 
 .game-subtitle {
@@ -424,6 +425,111 @@ button:focus-visible,
   font-weight: 600;
   letter-spacing: 0.12em;
   color: var(--jade);
+}
+
+/* ---- vehicle stat bars ---------------------------------------------- */
+
+.select-card-stat-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.select-card-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.select-card-stat-k {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+}
+
+.select-card-stat-bar {
+  height: 5px;
+  border-radius: 2px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  overflow: hidden;
+}
+
+.select-card-stat-fill {
+  display: block;
+  height: 100%;
+  background: var(--marigold);
+  border-radius: 2px;
+  transform-origin: left;
+  transition: width 200ms var(--ease);
+}
+
+.locked .select-card-stat-fill {
+  filter: opacity(0.5);
+}
+
+/* ---- weather toggle ------------------------------------------------- */
+.weather-drop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.weather-drop-line {
+  position: absolute;
+  top: -20px;
+  width: 1px;
+  height: 20px;
+  background: linear-gradient(to bottom, transparent, var(--cream));
+  opacity: 0.35;
+  animation: drop-fall linear infinite;
+}
+
+@keyframes drop-fall {
+  to {
+    transform: translateY(110vh);
+  }
+}
+
+/* ---- volume controls ------------------------------------------------ */
+.volume-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vol-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--cream);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  transition: border-color 120ms var(--ease), color 120ms var(--ease);
+}
+
+.vol-btn:hover {
+  border-color: var(--marigold);
+  color: var(--marigold);
+}
+
+.vol-val {
+  min-width: 34px;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cream-dim);
 }
 
 /* ---- segmented controls ------------------------------------------- */
