@@ -253,4 +253,96 @@ export const STORAGE_KEYS = {
   vehicle: "rush_vehicle",
   bestLap: "rush_bestLap",
   difficulty: "rush_difficulty",
+  dailyLastRace: "rush_dailyLastRace",
+  dailyStreak: "rush_dailyStreak",
+  dailyChallengeDate: "rush_dailyChallengeDate",
+  dailyChallenges: "rush_dailyChallenges",
+  upgradeLevels: "rush_upgradeLevels",
 };
+
+// -------------------------------------------------------------
+// DAILY CHALLENGES (autorush style)
+// -------------------------------------------------------------
+
+export interface ChallengeDef {
+  id: string;
+  title: string;
+  desc: string;
+  target: number; // target value to reach
+  reward: number; // coin reward on completion
+  // kind determines how progress is tracked
+  kind: "traps" | "drift" | "coins" | "laps" | "distance";
+}
+
+export const CHALLENGE_POOL: ChallengeDef[] = [
+  { id: "trap-dodger", title: "Trap Dodger", desc: "Dodge {target} hazards in a single race", target: 5, reward: 300, kind: "traps" },
+  { id: "drift-king", title: "Drift King", desc: "Drift for {target} meters in a single race", target: 150, reward: 350, kind: "drift" },
+  { id: "coin-collector", title: "Coin Collector", desc: "Collect {target} coins in a single race", target: 15, reward: 400, kind: "coins" },
+  { id: "lap-master", title: "Lap Master", desc: "Complete {target} laps without crashing", target: 3, reward: 500, kind: "laps" },
+  { id: "long-haul", title: "Long Haul", desc: "Travel {target} km in a single race", target: 8, reward: 450, kind: "distance" },
+  { id: "clean-run", title: "Clean Run", desc: "Finish a race with zero crashes", target: 1, reward: 600, kind: "laps" },
+];
+
+// Deterministic daily challenge selection seeded by date
+export function getDailyChallengeSeed(): number {
+  const now = new Date();
+  // Seed resets at midnight local time
+  return now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+}
+
+// -------------------------------------------------------------
+// VEHICLE UPGRADES (autorush style)
+// Each owned vehicle can be upgraded 3 times per stat.
+// -------------------------------------------------------------
+
+export interface UpgradeStat {
+  id: "topSpeed" | "accel" | "handling" | "nitroBonus";
+  label: string;
+  baseCost: number; // coins for level 1
+  costMult: number; // multiplier per level
+  boostPerLevel: number; // stat boost per level
+}
+
+export const UPGRADE_STATS: UpgradeStat[] = [
+  { id: "topSpeed", label: "Top Speed", baseCost: 800, costMult: 1.6, boostPerLevel: 2 },
+  { id: "accel", label: "Acceleration", baseCost: 700, costMult: 1.5, boostPerLevel: 0.5 },
+  { id: "handling", label: "Handling", baseCost: 900, costMult: 1.7, boostPerLevel: 0.05 },
+  { id: "nitroBonus", label: "Nitro", baseCost: 1000, costMult: 1.8, boostPerLevel: 2 },
+];
+
+export const MAX_UPGRADE_LEVEL = 3;
+
+export function upgradeCost(statId: string, currentLevel: number): number {
+  const stat = UPGRADE_STATS.find((s) => s.id === statId);
+  if (!stat || currentLevel >= MAX_UPGRADE_LEVEL) return -1;
+  return Math.round(stat.baseCost * Math.pow(stat.costMult, currentLevel));
+}
+
+export function getUpgradedStat(
+  vehicle: VehicleDef,
+  statId: string,
+  level: number
+): number {
+  const stat = UPGRADE_STATS.find((s) => s.id === statId);
+  if (!stat || level <= 0) return vehicle[statId as keyof VehicleDef] as number;
+  return (vehicle[statId as keyof VehicleDef] as number) + stat.boostPerLevel * level;
+}
+
+export function generateDailyChallenges(): ChallengeDef[] {
+  const seed = getDailyChallengeSeed();
+  let a = seed >>> 0;
+  const rng = () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  // Fisher-Yates shuffle, pick 3
+  const pool = [...CHALLENGE_POOL];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, 3);
+}

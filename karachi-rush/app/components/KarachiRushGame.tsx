@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import {
   CoinIcon,
   BoltIcon,
@@ -29,8 +30,15 @@ import {
   uDistanceMeters,
   mulberry32,
   STORAGE_KEYS,
+  CHALLENGE_POOL,
+  generateDailyChallenges,
+  UPGRADE_STATS,
+  MAX_UPGRADE_LEVEL,
+  upgradeCost,
+  getUpgradedStat,
   type VehicleDef,
   type DifficultyDef,
+  type ChallengeDef,
 } from "./game/data";
 
 // =============================================================
@@ -39,6 +47,14 @@ import {
 type Phase = "menu" | "countdown" | "racing" | "paused" | "finished";
 type TimeMode = "day" | "sunset" | "night";
 type ObstacleKind = "tyre" | "cone" | "rickshaw" | "breaker" | "oil" | "manhole";
+type CameraMode = "chase" | "hood" | "cinematic";
+
+const VEHICLE_TIERS: Record<string, string> = {
+  baba: "STARTER",
+  queen: "STREET",
+  hassan: "PROTOTYPE",
+  bhatta: "CHAMPION",
+};
 
 interface Obstacle {
   kind: ObstacleKind;
@@ -98,6 +114,74 @@ const TIME_LABELS: Record<TimeMode, string> = {
   sunset: "DUSK",
   night: "NIGHT",
 };
+
+// Music themes (day / sunset / night) — shared between audio and rendering effects
+type MusicTheme = "day" | "sunset" | "night";
+const MUSIC_THEMES: Record<MusicTheme, {
+  bassType: OscillatorType;
+  leadType: OscillatorType;
+  arpType: OscillatorType;
+  bassNotes: number[];
+  leadNotes: number[];
+  arpNotes: number[];
+  beatLen: number;
+  bassGain: number;
+  leadGain: number;
+  arpGain: number;
+}> = {
+  day: {
+    bassType: "sine",
+    leadType: "triangle",
+    arpType: "square",
+    bassNotes: [55, 41.2, 36.7, 49],
+    leadNotes: [110, 130.8, 146.8, 164.8],
+    arpNotes: [220, 246.9, 277.2, 311.1, 277.2, 246.9],
+    beatLen: 0.25,
+    bassGain: 0.24,
+    leadGain: 0.14,
+    arpGain: 0.10,
+  },
+  sunset: {
+    bassType: "sawtooth",
+    leadType: "sine",
+    arpType: "triangle",
+    bassNotes: [41.2, 36.7, 32.7, 38.9],
+    leadNotes: [82.4, 98.0, 110.0, 123.5],
+    arpNotes: [164.8, 185.0, 207.7, 233.1, 207.7, 185.0],
+    beatLen: 0.30,
+    bassGain: 0.24,
+    leadGain: 0.12,
+    arpGain: 0.08,
+  },
+  night: {
+    bassType: "square",
+    leadType: "sawtooth",
+    arpType: "sine",
+    bassNotes: [36.7, 32.7, 27.5, 34.6],
+    leadNotes: [65.4, 77.8, 87.3, 98.0],
+    arpNotes: [130.8, 146.8, 164.8, 185.0, 164.8, 146.8],
+    beatLen: 0.35,
+    bassGain: 0.20,
+    leadGain: 0.10,
+    arpGain: 0.06,
+  },
+};
+
+const CAM_VIEW_OPTIONS: [CamView, string][] = [
+  ["low", "LOW"],
+  ["normal", "NORMAL"],
+  ["high", "HIGH"],
+  ["roof", "ROOF"],
+];
+
+const VIBRATION_OPTIONS: [Vib, string][] = [
+  ["off", "Off"],
+  ["light", "Light"],
+  ["full", "Full"],
+];
+
+type CamView = "low" | "normal" | "high" | "roof";
+type Vib = "off" | "light" | "full";
 
 // 2πr for the 64px nitro ring's 28px radius track.
 const NITRO_CIRC = 2 * Math.PI * 28;
@@ -180,6 +264,7 @@ export default function KarachiRushGame() {
   const [countdownNum, setCountdownNum] = useState<number | string>(3);
   const [driftPopup, setDriftPopup] = useState<{ text: string; id: number } | null>(null);
   const [wrongWay, setWrongWay] = useState<boolean>(false);
+  const [audioUnlocked, setAudioUnlocked] = useState<boolean>(false);
   const [lapBanner, setLapBanner] = useState<{ district: string; tagline: string; lap: number; coins: number; traps: number; time: number } | null>(null);
   const [finalStats, setFinalStats] = useState<{
     rankings: { rank: number; name: string; time: number }[];
@@ -200,12 +285,75 @@ export default function KarachiRushGame() {
     difficulty: "medium", timeMode: "day",
   });
 
+  // ---- camera mode (chase / hood / cinematic) — switched with C key
+  const [cameraMode, setCameraMode] = useState<CameraMode>("chase");
+
+  // ---- camera view (Low / Normal / High / Roof) — autorush style
+  type CamView = "low" | "normal" | "high" | "roof";
+  const [camView, setCamView] = useState<CamView>("normal");
+
+  // ---- vibration (Off / Light / Full)
+  type Vib = "off" | "light" | "full";
+  const [vibration, setVibration] = useState<Vib>("light");
+
+  // ---- daily streak (last race date + streak count)
+  const [dailyStreak, setDailyStreak] = useState<number>(0);
+  const [dailyBonus, setDailyBonus] = useState<number>(0);
+  const [beatPulse, setBeatPulse] = useState<boolean>(false);
+
+  // ---- daily challenges (autorush style) ----
+  const [dailyChallenges, setDailyChallenges] = useState<ChallengeDef[]>([]);
+  const [challengeProgress, setChallengeProgress] = useState<Record<string, number>>({});
+  const [challengeCompleted, setChallengeCompleted] = useState<Record<string, boolean>>({});
+  const [challengeClaimed, setChallengeClaimed] = useState<Record<string, boolean>>({});
+
+  // ---- race-session challenge progress (reset each race) ----
+  const raceChallenge = useRef<{
+    traps: number;
+    driftMeters: number;
+    coins: number;
+    crashes: number;
+  }>({ traps: 0, driftMeters: 0, coins: 0, crashes: 0 });
+
+  // ---- vehicle upgrades (per-vehicle stat boosts) ----
+  const [upgradeLevels, setUpgradeLevels] = useState<Record<string, Record<string, number>>>({});
+
+  // Resolve the selected vehicle with its applied upgrade levels
+  const upgradedVehicle = useMemo(() => {
+    const base = vehicleById(selectedVehicle);
+    const levels = upgradeLevels[selectedVehicle] ?? {};
+    return {
+      ...base,
+      topSpeed: getUpgradedStat(base, "topSpeed", levels.topSpeed ?? 0),
+      accel: getUpgradedStat(base, "accel", levels.accel ?? 0),
+      handling: getUpgradedStat(base, "handling", levels.handling ?? 0),
+      nitroBonus: getUpgradedStat(base, "nitroBonus", levels.nitroBonus ?? 0),
+    };
+  }, [selectedVehicle, upgradeLevels]);
+
+  // ---- cinematic crash (letterbox bars + crash sound word, autorush style)
+  const [crashWord, setCrashWord] = useState<string | null>(null);
+  const [cinematicShowing, setCinematicShowing] = useState<boolean>(false);
+
+
+
+  // ---- music theme ref (shared between audio effect and applyTimeMode)
+  const musicThemeRef = useRef<MusicTheme>("day");
+  const musicBeatRef = useRef<boolean>(false);
+
   // ---- refs shared with the engine
   const controlsRef = useRef<Controls>({ throttle: 0, brake: 0, steer: 0, nitro: false, drift: false });
   const vehicleRef = useRef<VehicleDef>(VEHICLES[0]);
   const difficultyRef = useRef<DifficultyDef>(DIFFICULTIES[1]);
   const totalLapsRef = useRef(3);
   const soundEnabledRef = useRef(true);
+  const prevThrottleRef = useRef<boolean>(false);
+  const prevDriftRef = useRef<boolean>(false);
+  const prevNitroRef = useRef<boolean>(false);
+  const playerNitroRef = useRef<number>(100);
+  const fpsRef = useRef(0);
+  const frameCountRef = useRef(0);
+  const lastFrameTimeRef = useRef(0);
   // The menu TIME row doubles as the race's starting time of day. A ref is
   // needed because the engine is built once and would otherwise close over the
   // initial "day".
@@ -236,6 +384,11 @@ export default function KarachiRushGame() {
     playCoin: () => void;
     playThud: () => void;
     playCountdown: () => void;
+    playHorn: () => void;
+    playExhaustPop: () => void;
+    playTireSqueal: (intensity: number) => void;
+    playNitroWhoosh: () => void;
+    duckMusic: (target: number, len: number) => void;
     setMuted: (muted: boolean) => void;
     setMusicVolume: (v: number) => void;
     setEffectsVolume: (v: number) => void;
@@ -255,6 +408,38 @@ export default function KarachiRushGame() {
       soundRef.current.setEffectsVolume(effectsVolume);
     }
   }, [musicVolume, effectsVolume]);
+
+  // Auto-start audio on mount so music plays from the menu. AudioContext is
+  // suspended by browsers until the first user gesture; on first click/tap we
+  // resume it and mark audio unlocked so music/SFX are audible.
+  useEffect(() => {
+    let initScheduled = false;
+    const tryInit = () => {
+      if (initScheduled || !soundRef.current) return;
+      initScheduled = true;
+      try {
+        soundRef.current.init();
+        setAudioUnlocked(true);
+      } catch {
+        // AudioContext may still be blocked; user will unlock on next gesture.
+      }
+    };
+    // Attempt once on mount.
+    tryInit();
+    const onGesture = () => {
+      if (audioUnlocked) return;
+      soundRef.current?.init();
+      setAudioUnlocked(true);
+    };
+    document.addEventListener("keydown", onGesture, { once: true });
+    document.addEventListener("mousedown", onGesture, { once: true });
+    document.addEventListener("touchstart", onGesture, { once: true });
+    return () => {
+      document.removeEventListener("keydown", onGesture);
+      document.removeEventListener("mousedown", onGesture);
+      document.removeEventListener("touchstart", onGesture);
+    };
+  }, [audioUnlocked, soundRef.current]);
 
   useEffect(() => {
     let audioCtx: AudioContext | null = null;
@@ -283,22 +468,57 @@ export default function KarachiRushGame() {
     let musicArpGain: GainNode | null = null;
     let musicStartTime = 0;
 
+    // Music theme state — shared with the rendering effect via musicThemeRef
+    function buildMusicVoices(theme: MusicTheme) {
+      if (!audioCtx || !musicGain) return;
+      const cfg = MUSIC_THEMES[theme];
+      musicBass = audioCtx.createOscillator();
+      musicBass.type = cfg.bassType;
+      musicBass.frequency.setValueAtTime(cfg.bassNotes[0], audioCtx.currentTime);
+      musicBassGain = audioCtx.createGain();
+      musicBassGain.gain.setValueAtTime(cfg.bassGain, audioCtx.currentTime);
+      musicBass.connect(musicBassGain);
+      musicBassGain.connect(musicGain);
+      musicBass.start();
+
+      musicLead = audioCtx.createOscillator();
+      musicLead.type = cfg.leadType;
+      musicLead.frequency.setValueAtTime(cfg.leadNotes[0], audioCtx.currentTime);
+      musicLeadGain = audioCtx.createGain();
+      musicLeadGain.gain.setValueAtTime(cfg.leadGain, audioCtx.currentTime);
+      musicLead.connect(musicLeadGain);
+      musicLeadGain.connect(musicGain);
+      musicLead.start();
+
+      musicArp = audioCtx.createOscillator();
+      musicArp.type = cfg.arpType;
+      musicArp.frequency.setValueAtTime(cfg.arpNotes[0], audioCtx.currentTime);
+      musicArpGain = audioCtx.createGain();
+      musicArpGain.gain.setValueAtTime(cfg.arpGain, audioCtx.currentTime);
+      musicArp.connect(musicArpGain);
+      musicArpGain.connect(musicGain);
+      musicArp.start();
+    }
+
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 
     const initAudio = () => {
       if (audioCtx) return;
       audioCtx = new Ctx();
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume().catch(() => {});
+      }
       masterGain = audioCtx.createGain();
-      masterGain.gain.value = soundEnabledRef.current ? 0.7 : 0;
+      masterGain.gain.value = soundEnabledRef.current ? 0.95 : 0;
       masterGain.connect(audioCtx.destination);
 
       // --- sub-buses ---
       musicGain = audioCtx.createGain();
-      musicGain.gain.value = soundEnabledRef.current ? 0.5 : 0;
+      musicGain.gain.value = soundEnabledRef.current ? 0.85 : 0;
       musicGain.connect(masterGain);
 
       sfxGain = audioCtx.createGain();
-      sfxGain.gain.value = soundEnabledRef.current ? 0.8 : 0;
+      sfxGain.gain.value = soundEnabledRef.current ? 0.9 : 0;
       sfxGain.connect(masterGain);
 
       // --- engine voices ---
@@ -354,70 +574,66 @@ export default function KarachiRushGame() {
       nitroGain.connect(sfxGain);
       nitroOsc.start();
 
-      // --- background music (procedural, loops) ---
+      // --- horn (H key) — short honk, auto-rickshaw style
+      const hornOsc = audioCtx.createOscillator();
+      hornOsc.type = "square";
+      hornOsc.frequency.setValueAtTime(220, audioCtx.currentTime); // A3
+      const hornGain = audioCtx.createGain();
+      hornGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      hornOsc.connect(hornGain);
+      hornGain.connect(sfxGain);
+      hornOsc.start();
+
+      // --- background music (procedural, loops) — theme-aware (day/sunset/night) ---
       musicStartTime = audioCtx.currentTime;
 
-      musicBass = audioCtx.createOscillator();
-      musicBass.type = "sine";
-      musicBass.frequency.setValueAtTime(55, audioCtx.currentTime); // A1
-      musicBassGain = audioCtx.createGain();
-      musicBassGain.gain.setValueAtTime(0.14, audioCtx.currentTime);
-      musicBass.connect(musicBassGain);
-      musicBassGain.connect(musicGain);
-      musicBass.start();
+      buildMusicVoices("day");
 
-      musicLead = audioCtx.createOscillator();
-      musicLead.type = "triangle";
-      musicLeadGain = audioCtx.createGain();
-      musicLeadGain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-      musicLead.connect(musicLeadGain);
-      musicLeadGain.connect(musicGain);
-      musicLead.start();
+      let musicDuck = 1;
 
-      musicArp = audioCtx.createOscillator();
-      musicArp.type = "square";
-      musicArpGain = audioCtx.createGain();
-      musicArpGain.gain.setValueAtTime(0.05, audioCtx.currentTime);
-      musicArp.connect(musicArpGain);
-      musicArpGain.connect(musicGain);
-      musicArp.start();
-
-      // --- music sequencer ---
-      const bassNotes = [55, 41.2, 36.7, 49]; // A1, F#1, E1, G#1
-      const leadNotes = [110, 130.8, 146.8, 164.8]; // A2, C#3, D#3, E3
-      const arpNotes = [220, 246.9, 277.2, 311.1, 277.2, 246.9]; // A3, B3, C#4, D#4...
-
+      // --- music sequencer (theme-aware, beat-synced) ---
       let step = 0;
+      let lastBeat = 0;
+      const onBeat = () => {
+        musicBeatRef.current = true;
+        setTimeout(() => { musicBeatRef.current = false; }, 60);
+      };
       const tick = () => {
-        if (!audioCtx) return;
-        const t = audioCtx.currentTime;
+        const ctx = audioCtx;
+        if (!ctx) return;
+        const t = ctx.currentTime;
+        const cfg = MUSIC_THEMES[musicThemeRef.current];
         const bar = t - musicStartTime;
-        const beatLen = 0.25; // 16th notes at ~120bpm
-
+        const beatLen = cfg.beatLen;
+        const beat = Math.floor(bar / beatLen);
+        if (beat !== lastBeat) {
+          lastBeat = beat;
+          onBeat();
+        }
         // bass changes every 4 beats
-        const bassIdx = Math.floor(bar / (beatLen * 4)) % bassNotes.length;
+        const bassIdx = Math.floor(bar / (beatLen * 4)) % cfg.bassNotes.length;
         if (step % 4 === 0 && musicBassGain) {
-          musicBassGain.gain.setValueAtTime(0.14, t);
-          musicBassGain.gain.exponentialRampToValueAtTime(0.03, t + beatLen * 3.9);
-          musicBass!.frequency.setValueAtTime(bassNotes[bassIdx], t);
+          musicBassGain.gain.setValueAtTime(cfg.bassGain * musicDuck, t);
+          musicBassGain.gain.exponentialRampToValueAtTime(0.03 * musicDuck, t + beatLen * 3.9);
+          musicBass!.frequency.setValueAtTime(cfg.bassNotes[bassIdx], t);
         }
 
         // lead plays on beats 1 and 3
         if (step % 8 === 0 || step % 8 === 4) {
-          const leadIdx = Math.floor(step / 8) % leadNotes.length;
+          const leadIdx = Math.floor(step / 8) % cfg.leadNotes.length;
           if (musicLeadGain) {
-            musicLeadGain.gain.setValueAtTime(0.08, t);
-            musicLeadGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-            musicLead!.frequency.setValueAtTime(leadNotes[leadIdx], t);
+            musicLeadGain.gain.setValueAtTime(cfg.leadGain * musicDuck, t);
+            musicLeadGain.gain.exponentialRampToValueAtTime(0.001 * musicDuck, t + 0.2);
+            musicLead!.frequency.setValueAtTime(cfg.leadNotes[leadIdx], t);
           }
         }
 
         // arp on every 16th
         if (musicArpGain) {
-          const arpIdx = step % arpNotes.length;
-          musicArpGain.gain.setValueAtTime(0.05, t);
-          musicArpGain.gain.exponentialRampToValueAtTime(0.001, t + beatLen * 0.9);
-          musicArp!.frequency.setValueAtTime(arpNotes[arpIdx], t);
+          const arpIdx = step % cfg.arpNotes.length;
+          musicArpGain.gain.setValueAtTime(cfg.arpGain * musicDuck, t);
+          musicArpGain.gain.exponentialRampToValueAtTime(0.001 * musicDuck, t + beatLen * 0.9);
+          musicArp!.frequency.setValueAtTime(cfg.arpNotes[arpIdx], t);
         }
 
         step = (step + 1) % 32;
@@ -429,14 +645,33 @@ export default function KarachiRushGame() {
         init: initAudio,
         updateEngine: (speed: number, throttle: boolean, nitro: boolean) => {
           if (!audioCtx || !engineBass || !engineBassGain || !engineLead || !engineLeadGain || !engineFilter) return;
-          const base = 44 + speed * 2.2 + (throttle ? 22 : 0) + (nitro ? 34 : 0);
-          const targetFreq = Math.min(220, base);
-          engineBass.frequency.setTargetAtTime(targetFreq * 0.5, audioCtx.currentTime, 0.06);
-          engineLead.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.06);
-          const gv = 0.06 + Math.min(0.18, (speed / 50) * 0.14) + (throttle ? 0.04 : 0);
-          engineBassGain.gain.setTargetAtTime(gv * 0.7, audioCtx.currentTime, 0.06);
-          engineLeadGain.gain.setTargetAtTime(gv, audioCtx.currentTime, 0.06);
-          engineFilter.frequency.setTargetAtTime(700 + speed * 12 + (nitro ? 400 : 0), audioCtx.currentTime, 0.08);
+          // richer RPM curve
+          const base = 40 + speed * 2.4 + (throttle ? 24 : 0) + (nitro ? 38 : 0);
+          const targetFreq = Math.min(260, base);
+          engineBass.frequency.setTargetAtTime(targetFreq * 0.5, audioCtx.currentTime, 0.05);
+          engineLead.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.05);
+          const gv = 0.05 + Math.min(0.22, (speed / 55) * 0.16) + (throttle ? 0.05 : 0);
+          engineBassGain.gain.setTargetAtTime(gv * 0.75, audioCtx.currentTime, 0.05);
+          engineLeadGain.gain.setTargetAtTime(gv, audioCtx.currentTime, 0.05);
+          engineFilter.frequency.setTargetAtTime(650 + speed * 13 + (nitro ? 450 : 0), audioCtx.currentTime, 0.07);
+          // exhaust pop on throttle lift-off
+          if (prevThrottleRef.current && !throttle && speed > 12) {
+            soundRef.current?.playExhaustPop();
+          }
+          prevThrottleRef.current = throttle;
+          // tire squeal when drifting at speed
+          if (controlsRef.current?.drift && speed > 18) {
+            soundRef.current?.playTireSqueal(Math.min(1, speed / 50));
+            if (!prevDriftRef.current) soundRef.current?.playDrift(true);
+          } else if (prevDriftRef.current) {
+            soundRef.current?.playDrift(false);
+          }
+          prevDriftRef.current = controlsRef.current?.drift ?? false;
+          // nitro whoosh on engage
+          if (nitro && !prevNitroRef.current && playerNitroRef.current > 5) {
+            soundRef.current?.playNitroWhoosh();
+          }
+          prevNitroRef.current = nitro;
         },
         playDrift: (d) => {
           if (!audioCtx || !driftGain) return;
@@ -536,6 +771,77 @@ export default function KarachiRushGame() {
             osc.stop(t + i * 0.25 + 0.2);
           });
         },
+        playHorn: () => {
+          if (!audioCtx || !hornOsc || !hornGain) return;
+          const t = audioCtx.currentTime;
+          hornOsc.frequency.setValueAtTime(220, t);
+          hornGain.gain.setValueAtTime(0.18, t);
+          hornGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        },
+        // exhaust pop / backfire on lift-off
+        playExhaustPop: () => {
+          if (!audioCtx || !sfxGain) return;
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(150 + Math.random() * 60, audioCtx.currentTime);
+          g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+          osc.connect(g);
+          g.connect(sfxGain);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.12);
+        },
+        // tire squeal on drift / loss of grip
+        playTireSqueal: (intensity: number) => {
+          if (!audioCtx || !sfxGain) return;
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          const f = audioCtx.createBiquadFilter();
+          f.type = "bandpass";
+          f.frequency.setValueAtTime(2500 + intensity * 1200, audioCtx.currentTime);
+          f.Q.setValueAtTime(4, audioCtx.currentTime);
+          osc.type = "square";
+          osc.frequency.setValueAtTime(60 + intensity * 40, audioCtx.currentTime);
+          g.gain.setValueAtTime(0.06 * intensity, audioCtx.currentTime);
+          osc.connect(f);
+          f.connect(g);
+          g.connect(sfxGain);
+          osc.start();
+          g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+          osc.stop(audioCtx.currentTime + 0.5);
+        },
+        // nitro whoosh on engage
+        playNitroWhoosh: () => {
+          if (!audioCtx || !sfxGain) return;
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          const f = audioCtx.createBiquadFilter();
+          f.type = "lowpass";
+          f.frequency.setValueAtTime(400, audioCtx.currentTime);
+          f.frequency.exponentialRampToValueAtTime(4000, audioCtx.currentTime + 0.5);
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(80, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.5);
+          g.gain.setValueAtTime(0.14, audioCtx.currentTime);
+          osc.connect(f);
+          f.connect(g);
+          g.connect(sfxGain);
+          osc.start();
+          g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+          osc.stop(audioCtx.currentTime + 0.6);
+        },
+        duckMusic: (target: number, len: number) => {
+          if (!audioCtx || !musicGain) return;
+          const mg = musicGain;
+          const ac = audioCtx;
+          musicDuck = target;
+          mg.gain.setValueAtTime(target, ac.currentTime);
+          setTimeout(() => {
+            musicDuck = 1;
+            mg.gain.setValueAtTime(1, ac.currentTime);
+          }, len);
+        },
         setMuted: (muted: boolean) => {
           if (masterGain && audioCtx) {
             masterGain.gain.setTargetAtTime(muted ? 0 : 0.7, audioCtx.currentTime, 0.05);
@@ -566,6 +872,12 @@ export default function KarachiRushGame() {
     };
     initAudio();
   }, []);
+
+  // beat-synced HUD pulse on music beat
+  useEffect(() => {
+    if (musicBeatRef.current) setBeatPulse(true);
+    setTimeout(() => setBeatPulse(false), 60);
+  }, [musicBeatRef.current]);
 
   // -------------------------------------------------------------
   // PERSISTED ECONOMY (coins bank, unlocks)
@@ -603,6 +915,43 @@ export default function KarachiRushGame() {
     setUnlocked(readUnlocked());
     const lastDiff = window.localStorage.getItem(STORAGE_KEYS.difficulty);
     if (lastDiff && DIFFICULTIES.some((d) => d.id === lastDiff)) setDifficultyId(lastDiff);
+    // Daily streak: if the last race was yesterday, keep the streak; if today, keep it too;
+    // if more than a day passed, reset.
+    const lastRaceRaw = window.localStorage.getItem(STORAGE_KEYS.dailyLastRace);
+    const streakRaw = window.localStorage.getItem(STORAGE_KEYS.dailyStreak);
+    if (lastRaceRaw && streakRaw) {
+      const lastRace = new Date(lastRaceRaw).getTime();
+      const now = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
+      const diffDays = Math.floor((now - lastRace) / oneDay);
+      if (diffDays <= 1) {
+        setDailyStreak(parseInt(streakRaw, 10) || 0);
+      } else {
+        setDailyStreak(0);
+        try { window.localStorage.setItem(STORAGE_KEYS.dailyStreak, "0"); } catch { /* ignore */ }
+      }
+    }
+    // Daily challenges: regenerate once per day (seed resets at midnight)
+    const challengeDateRaw = window.localStorage.getItem(STORAGE_KEYS.dailyChallengeDate);
+    const todayStr = new Date().toDateString();
+    if (challengeDateRaw !== todayStr) {
+      const challenges = generateDailyChallenges();
+      setDailyChallenges(challenges);
+      const prog: Record<string, number> = {};
+      const comp: Record<string, boolean> = {};
+      const cl: Record<string, boolean> = {};
+      challenges.forEach((c) => { prog[c.id] = 0; comp[c.id] = false; cl[c.id] = false; });
+      setChallengeProgress(prog);
+      setChallengeCompleted(comp);
+      setChallengeClaimed(cl);
+      try { window.localStorage.setItem(STORAGE_KEYS.dailyChallengeDate, todayStr); } catch { /* ignore */ }
+      try { window.localStorage.setItem(STORAGE_KEYS.dailyChallenges, JSON.stringify(challenges.map((c) => c.id))); } catch { /* ignore */ }
+    }
+    // Vehicle upgrades: load saved per-vehicle upgrade levels
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEYS.upgradeLevels);
+      if (raw) setUpgradeLevels(JSON.parse(raw) as Record<string, Record<string, number>>);
+    } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -618,6 +967,31 @@ export default function KarachiRushGame() {
       soundRef.current?.playCoin();
     }
   }, [readBank, writeBank, readUnlocked, writeUnlocked]);
+
+  const buyUpgrade = useCallback((statId: string) => {
+    const v = vehicleById(selectedVehicle);
+    if (!v || v.price > 0 && !readUnlocked().includes(v.id)) return;
+    const levels = upgradeLevels[selectedVehicle] ?? {};
+    const curLevel = levels[statId] ?? 0;
+    if (curLevel >= MAX_UPGRADE_LEVEL) return;
+    const cost = upgradeCost(statId, curLevel);
+    if (cost <= 0) return;
+    const curBank = readBank();
+    if (curBank < cost) return;
+    writeBank(curBank - cost);
+    setBank(curBank - cost);
+    setUpgradeLevels((prev) => ({
+      ...prev,
+      [selectedVehicle]: { ...(prev[selectedVehicle] ?? {}), [statId]: curLevel + 1 },
+    }));
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.upgradeLevels, JSON.stringify({
+        ...upgradeLevels,
+        [selectedVehicle]: { ...(upgradeLevels[selectedVehicle] ?? {}), [statId]: curLevel + 1 },
+      }));
+    } catch { /* ignore */ }
+    soundRef.current?.playCoin();
+  }, [selectedVehicle, upgradeLevels, readBank, writeBank]);
 
   // =============================================================
   // THREE.JS 3D RACE ENGINE (built once per run)
@@ -647,7 +1021,7 @@ export default function KarachiRushGame() {
     const trackLength = spline.getLength();
 
     // ---- engine-local state
-    const vehicleDef = vehicleById(selectedVehicle);
+    const vehicleDef = upgradedVehicle;
     vehicleRef.current = vehicleDef;
     difficultyRef.current = difficultyById(window.localStorage.getItem(STORAGE_KEYS.difficulty) || difficultyId);
 
@@ -1027,31 +1401,34 @@ export default function KarachiRushGame() {
 
       renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
       renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.1;
+      renderer.toneMappingExposure = 1.25;
       viewport.innerHTML = "";
       viewport.appendChild(renderer.domElement);
 
-      // ---- HD post-processing: bloom + tone mapping composer
+      // ---- HD post-processing: bloom + ACES output tone mapping composer
       composerRef.current = new EffectComposer(renderer);
       composerRef.current.addPass(new RenderPass(scene, camera));
-      const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.2, 0.4, 0.85);
-      bloomPass.threshold = 0.15;
-      bloomPass.strength = 1.4;
-      bloomPass.radius = 0.6;
+      const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.4, 0.4, 0.9);
+      bloomPass.threshold = 0.85;
+      bloomPass.strength = 0.4;
+      bloomPass.radius = 0.45;
       bloomPassRef.current = bloomPass;
       composerRef.current.addPass(bloomPass);
+      const outputPass = new OutputPass();
+      composerRef.current.addPass(outputPass);
 
-      ambientLight = new THREE.HemisphereLight(TRACK.daySky, TRACK.groundColor, 0.85);
+      ambientLight = new THREE.HemisphereLight(0xc4d6ea, 0xbba27f, 1.65);
       scene.add(ambientLight);
-      dirLight = new THREE.DirectionalLight(0xffffff, 1.15);
-      dirLight.position.set(200, 400, 150);
+      dirLight = new THREE.DirectionalLight(0xfff0d8, 3.2);
+      dirLight.position.set(180, 320, 140);
       dirLight.castShadow = true;
-      dirLight.shadow.mapSize.width = 2048;
-      dirLight.shadow.mapSize.height = 2048;
+      dirLight.shadow.mapSize.width = 4096;
+      dirLight.shadow.mapSize.height = 4096;
       dirLight.shadow.camera.near = 10;
       dirLight.shadow.camera.far = 1200;
       const d = 350;
@@ -1059,14 +1436,15 @@ export default function KarachiRushGame() {
       dirLight.shadow.camera.right = d;
       dirLight.shadow.camera.top = d;
       dirLight.shadow.camera.bottom = -d;
+      dirLight.shadow.bias = -0.0005;
       scene.add(dirLight);
-      headLight = new THREE.SpotLight(0xfff6c5, 0, 180, Math.PI / 4, 0.3, 2);
+      headLight = new THREE.SpotLight(0xfff6c5, 0, 180, Math.PI / 4, 0.4, 1.2);
       headLight.position.set(0, 2, 2);
       scene.add(headLight);
 
       const ground = new THREE.Mesh(
         new THREE.PlaneGeometry(4000, 4000),
-        new THREE.MeshStandardMaterial({ color: TRACK.groundColor, roughness: 0.9 })
+        new THREE.MeshStandardMaterial({ color: 0x5a6350, roughness: 0.85 })
       );
       ground.rotation.x = -Math.PI / 2;
       ground.position.y = GROUND_Y;
@@ -1132,7 +1510,7 @@ export default function KarachiRushGame() {
       roadGeo.setAttribute("uv", new THREE.Float32BufferAttribute(roadUvs, 2));
       roadGeo.setIndex(roadIndices);
       roadGeo.computeVertexNormals();
-      const roadMesh = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.85, metalness: 0.05 }));
+      const roadMesh = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 0.8, metalness: 0.05 }));
       roadMesh.receiveShadow = true;
       scene.add(roadMesh);
 
@@ -1477,6 +1855,15 @@ export default function KarachiRushGame() {
     const playerRickshaw = createRickshawModel(vehicleDef.bodyColor, vehicleDef.canopyColor, vehicleDef.frameColor, true);
     scene.add(playerRickshaw.group);
 
+    // nitro flame visual (autorush style)
+    const nitroFlame = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.6, 2.4),
+      new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0, side: THREE.DoubleSide })
+    );
+    nitroFlame.position.set(0, 0, 2.6);
+    nitroFlame.rotation.x = Math.PI;
+    playerRickshaw.group.add(nitroFlame);
+
     RIVALS.forEach((rival, idx) => {
       const model = createRickshawModel(rival.bodyColor, rival.canopyColor, "#222222", false, rival.name);
       scene.add(model.group);
@@ -1501,52 +1888,63 @@ export default function KarachiRushGame() {
       if (!scene || !ambientLight || !dirLight || !headLight) return;
       if (mode === "day") {
         scene.background = new THREE.Color(TRACK.daySky);
-        scene.fog = new THREE.FogExp2(TRACK.daySky, 0.0018);
-        skyUniforms?.cTop.value.set(0x2f6d94);
-        skyUniforms?.cMid.value.set(0x6aa9c9);
-        skyUniforms?.cBot.value.set(TRACK.daySky);
-        ambientLight.intensity = 0.85;
-        ambientLight.color.set(TRACK.daySky);
-        ambientLight.groundColor.set(TRACK.groundColor);
-        dirLight.intensity = 1.15;
-        dirLight.color.set(0xffffff);
+        scene.fog = new THREE.FogExp2(0xd6dde4, 0.0011);
+        skyUniforms?.cTop.value.set(0x2f6fd0);
+        skyUniforms?.cMid.value.set(0x7fb2ea);
+        skyUniforms?.cBot.value.set(0xd6dde4);
+        ambientLight.intensity = 1.65;
+        ambientLight.color.set(0xc4d6ea);
+        ambientLight.groundColor.set(0xbba27f);
+        dirLight.intensity = 3.2;
+        dirLight.color.set(0xfff0d8);
+        dirLight.position.set(180, 320, 140);
         headLight.intensity = 0;
+        if (renderer) renderer.toneMappingExposure = 1.25;
       } else if (mode === "sunset") {
         scene.background = new THREE.Color(TRACK.sunsetSky);
-        scene.fog = new THREE.FogExp2(TRACK.sunsetSky, 0.0016);
-        skyUniforms?.cTop.value.set(0x2a1733);
-        skyUniforms?.cMid.value.set(0xc4452f);
-        skyUniforms?.cBot.value.set(TRACK.sunsetSky);
-        ambientLight.intensity = 0.6;
-        ambientLight.color.set(0xffab91);
-        ambientLight.groundColor.set(0x584032);
-        dirLight.intensity = 0.95;
-        dirLight.color.set(0xff9800);
-        headLight.intensity = 700;
+        scene.fog = new THREE.FogExp2(0xf2a57a, 0.0013);
+        skyUniforms?.cTop.value.set(0x8a1c62);
+        skyUniforms?.cMid.value.set(0xf06a3a);
+        skyUniforms?.cBot.value.set(0xffc978);
+        ambientLight.intensity = 1.50;
+        ambientLight.color.set(0xc89ad8);
+        ambientLight.groundColor.set(0xc48a6c);
+        dirLight.intensity = 2.8;
+        dirLight.color.set(0xffc88a);
+        dirLight.position.set(-280, 120, 100);
+        headLight.intensity = 3500;
+        if (renderer) renderer.toneMappingExposure = 1.22;
       } else {
         scene.background = new THREE.Color(TRACK.nightSky);
-        scene.fog = new THREE.FogExp2(TRACK.nightSky, 0.0021);
-        skyUniforms?.cTop.value.set(0x04060f);
-        skyUniforms?.cMid.value.set(0x0a1330);
-        skyUniforms?.cBot.value.set(TRACK.nightSky);
-        ambientLight.intensity = 0.42;
-        ambientLight.color.set(0x46577a);
-        ambientLight.groundColor.set(0x181b26);
-        dirLight.intensity = 0.48;
-        dirLight.color.set(0x8fa4d2);
-        headLight.intensity = 2200;
+        scene.fog = new THREE.FogExp2(0x10131b, 0.0017);
+        skyUniforms?.cTop.value.set(0x04060d);
+        skyUniforms?.cMid.value.set(0x0c1428);
+        skyUniforms?.cBot.value.set(0x1d2232);
+        ambientLight.intensity = 1.40;
+        ambientLight.color.set(0x405584);
+        ambientLight.groundColor.set(0x262330);
+        dirLight.intensity = 0.85;
+        dirLight.color.set(0x9cb4e4);
+        dirLight.position.set(140, 240, -120);
+        headLight.intensity = 18000;
+        headLight.distance = 95;
+        headLight.decay = 1.1;
+        if (renderer) renderer.toneMappingExposure = 1.20;
       }
-      // Rain: denser, darker fog and a dimmer sky so the world feels wet.
+      // Rain: denser fog and soft glistening light
       if (weather === "rain") {
         scene.fog = new THREE.FogExp2(
           scene.background as THREE.Color,
-          (scene.background as THREE.Color).getHex() === TRACK.nightSky ? 0.0035 : 0.0028
+          mode === "night" ? 0.0028 : 0.0022
         );
-        ambientLight.intensity *= 0.75;
-        dirLight.intensity *= 0.8;
+        ambientLight.intensity *= 0.88;
+        dirLight.intensity *= 0.85;
       }
-      const winInt = mode === "night" ? 1.15 : mode === "sunset" ? 0.45 : 0.06;
+      const winInt = mode === "night" ? 1.4 : mode === "sunset" ? 0.85 : 0.2;
       for (const m of windowMats) m.emissiveIntensity = winInt;
+
+      // Switch music theme to match time of day — each district gets its own sound
+      musicThemeRef.current = mode === "sunset" ? "sunset" : mode === "night" ? "night" : "day";
     }
     applyTimeMode("day");
 
@@ -1575,6 +1973,8 @@ export default function KarachiRushGame() {
       crashTimer = 0;
       gripLossTimer = 0;
       lapSummaries.length = 0;
+      // Reset per-race challenge progress
+      raceChallenge.current = { traps: 0, driftMeters: 0, coins: 0, crashes: 0 };
       try {
         const blRaw = window.localStorage.getItem(STORAGE_KEYS.bestLap);
         bestLapSec = blRaw ? parseFloat(blRaw) || null : null;
@@ -1745,6 +2145,64 @@ export default function KarachiRushGame() {
       // deposit coins
       const b = readBank() + runCoins;
       writeBank(b);
+      // Daily streak: increment if racing today (or yesterday keeps streak), reset if >1 day gap
+      const now = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
+      const lastRaceRaw = window.localStorage.getItem(STORAGE_KEYS.dailyLastRace);
+      const streakRaw = window.localStorage.getItem(STORAGE_KEYS.dailyStreak);
+      let streak = 0;
+      if (lastRaceRaw && streakRaw) {
+        const lastRace = new Date(lastRaceRaw).getTime();
+        const diffDays = Math.floor((now - lastRace) / oneDay);
+        streak = diffDays <= 1 ? Math.max(0, parseInt(streakRaw, 10) || 0) + 1 : 1;
+      } else {
+        streak = 1;
+      }
+      try {
+        window.localStorage.setItem(STORAGE_KEYS.dailyLastRace, String(now));
+        window.localStorage.setItem(STORAGE_KEYS.dailyStreak, String(streak));
+      } catch { /* ignore */ }
+      setDailyStreak(streak);
+      const streakBonus = streak > 1 ? streak * 100 : 0;
+      setDailyBonus(streakBonus);
+      if (streakBonus > 0) {
+        const bonusBank = readBank() + streakBonus;
+        writeBank(bonusBank);
+      }
+      // Daily challenges: sync session progress, award rewards for completed ones
+      const nextProgress = { ...challengeProgress };
+      const nextCompleted = { ...challengeCompleted };
+      const nextClaimed = { ...challengeClaimed };
+      let challengeReward = 0;
+      const newlyCompleted: string[] = [];
+      const race = raceChallenge.current;
+      for (const c of dailyChallenges) {
+        if (nextCompleted[c.id]) continue;
+        let val = 0;
+        if (c.kind === "traps") val = race.traps;
+        else if (c.kind === "drift") val = Math.round(race.driftMeters);
+        else if (c.kind === "coins") val = race.coins;
+        else if (c.kind === "laps") val = playerLap;
+        else if (c.kind === "distance") val = Math.round(distanceMeters / 1000);
+        nextProgress[c.id] = Math.max(nextProgress[c.id] ?? 0, val);
+        if (val >= c.target && !nextCompleted[c.id]) {
+          nextCompleted[c.id] = true;
+          newlyCompleted.push(c.id);
+          challengeReward += c.reward;
+        }
+      }
+      setChallengeProgress(nextProgress);
+      setChallengeCompleted(nextCompleted);
+      if (newlyCompleted.length > 0) {
+        const rewardBank = readBank() + challengeReward;
+        writeBank(rewardBank);
+      }
+      // Persist completed challenges
+      try {
+        window.localStorage.setItem(STORAGE_KEYS.dailyChallenges, JSON.stringify(
+          dailyChallenges.map((c) => ({ id: c.id, completed: !!nextCompleted[c.id] }))
+        ));
+      } catch { /* ignore */ }
       // rankings: player distance parity vs rivals' traveled distance
       const playerTotalDist = totalLapsRef.current * trackLength; // player just crossed the final line
       const rankRows: { rank: number; name: string; time: number }[] = [{ rank: 1, name: "YOU", time: raceTimer }];
@@ -1785,6 +2243,17 @@ export default function KarachiRushGame() {
       if (e.code === "KeyN" || e.code === "ControlLeft") c.nitro = true;
       if (e.code === "KeyP") engineRef.current?.togglePause();
       if (e.code === "Escape") engineRef.current?.togglePause();
+      if (e.code === "KeyH") soundRef.current?.playHorn();
+      if (e.code === "KeyC") setCameraMode((m) => (m === "chase" ? "hood" : m === "hood" ? "cinematic" : "chase"));
+      if (e.code === "KeyM") setSoundEnabled((v) => !v);
+      if (e.code === "KeyR" && manPhase === "racing") {
+        // back on track: reset to track center, small speed penalty
+        playerU = ((playerU % 1) + 1) % 1;
+        playerLateral = 0;
+        playerSpeed = Math.max(0, playerSpeed * 0.5);
+        crashTimer = 0.3;
+        soundRef.current?.playThud();
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const c = controlsRef.current;
@@ -1803,6 +2272,9 @@ export default function KarachiRushGame() {
     // =========================================================
     let lastTime = performance.now();
     let positionRank = 1;
+    let fpsLastTime = performance.now();
+    let fpsFrameCount = 0;
+    let currentFps = 60;
 
     function gameLoop(now: number) {
       if (disposed) return;
@@ -1810,11 +2282,19 @@ export default function KarachiRushGame() {
       const dt = Math.min((now - lastTime) / 1000, 0.1);
       lastTime = now;
 
+      // FPS counter
+      fpsFrameCount++;
+      if (now - fpsLastTime >= 1000) {
+        currentFps = fpsFrameCount;
+        fpsFrameCount = 0;
+        fpsLastTime = now;
+      }
+      fpsRef.current = currentFps;
+
       if (manPhase === "paused") {
         composerRef.current?.render();
         return;
       }
-
       const ctrl = controlsRef.current;
       const diff = difficultyRef.current;
       const isRacing = manPhase === "racing";
@@ -1847,8 +2327,13 @@ export default function KarachiRushGame() {
       if (isRacing && ctrl.nitro && playerNitro > 0) {
         playerNitro = Math.max(0, playerNitro - 26 * dt);
         soundRef.current?.playNitro(true);
+        // nitro flame pulse
+        const flame = Math.random() * 0.4 + 0.6;
+        nitroFlame.material.opacity = flame;
+        nitroFlame.scale.setScalar(0.8 + Math.random() * 0.5);
       } else {
         soundRef.current?.playNitro(false);
+        nitroFlame.material.opacity = 0;
         if (playerSpeed > 15) playerNitro = Math.min(100, playerNitro + (ctrl.drift ? 16 : 4) * dt);
       }
 
@@ -1864,10 +2349,11 @@ export default function KarachiRushGame() {
       playerSteerAngle = THREE.MathUtils.lerp(playerSteerAngle, ctrl.steer * 0.45, 0.15);
       playerRickshaw.frontWheel.rotation.y = -playerSteerAngle;
 
-      // drift scoring
+      // drift scoring + drift distance (for daily challenge)
       isDriftingNow = isRacing && ctrl.drift && Math.abs(ctrl.steer) > 0.2 && playerSpeed > 20;
       if (isDriftingNow) {
         totalScore += Math.round(150 * dt * diff.scoreMult);
+        raceChallenge.current.driftMeters += playerSpeed * dt;
         if (Math.random() < 0.05) setDriftPopup({ text: "DRIFT +150", id: Date.now() });
       }
       soundRef.current?.playDrift(isDriftingNow);
@@ -1890,14 +2376,29 @@ export default function KarachiRushGame() {
       const playerPos = new THREE.Vector3().copy(playerPos0).addScaledVector(playerNormal, playerLateral);
       playerRickshaw.group.position.copy(playerPos);
       playerRickshaw.group.lookAt(new THREE.Vector3().copy(playerPos).add(playerTangent));
-      if (crashTimer > 0) playerRickshaw.group.rotation.y += dt * 9;
+      if (crashTimer > 0) {
+        playerRickshaw.group.rotation.y += dt * 9;
+        // crash squash & stretch
+        const squash = 1 - Math.min(1, crashTimer / 0.55) * 0.45;
+        const stretch = 1 + Math.min(1, crashTimer / 0.55) * 0.35;
+        playerRickshaw.group.scale.set(stretch, squash, stretch);
+      } else {
+        playerRickshaw.group.scale.set(1, 1, 1);
+      }
+      // drift flash on body
+      if (ctrl.drift && playerSpeed > 18) {
+        const driftFlash = 0;
+        playerRickshaw.group.traverse((n) => {
+          if (n instanceof THREE.Mesh && n.material && n.material.color) {
+            n.material.color.setHex(0xffffff).lerp(new THREE.Color(0xffd700), driftFlash);
+          }
+        });
+      }
       const targetRoll = -ctrl.steer * 0.12 * (playerSpeed / 40) + (gripLossTimer > 0 ? -0.09 : 0);
       playerRickshaw.group.rotation.z = THREE.MathUtils.lerp(playerRickshaw.group.rotation.z, targetRoll, 0.15);
       if (isMenuIdle) {
-        // idle life: engine bounce + restless front wheel while showing off
-        const tIdle = now / 1000;
-        playerRickshaw.group.position.y += Math.sin(tIdle * 2.1) * 0.05;
-        playerRickshaw.frontWheel.rotation.y = Math.sin(tIdle * 1.6) * 0.22;
+        // idle life: steady front wheel, no bounce
+        playerRickshaw.frontWheel.rotation.y = 0;
       }
 
       headLight.position.set(playerPos.x, playerPos.y + 2, playerPos.z);
@@ -1906,17 +2407,13 @@ export default function KarachiRushGame() {
 
       // 3. camera
       if (isMenuIdle) {
-        // Hero shot: three-quarter rear, aimed down the road so the track bends
-        // away and the skyline sits behind the rickshaw. A slow breathing drift
-        // keeps it alive without ever leaving the composition, unlike the full
-        // orbit this replaced, which spent half its cycle staring across the
-        // road at nothing.
+        // Hero shot: steady three-quarter rear, no camera breathing drift
         const t = now / 1000;
-        const back = 11.5 + Math.sin(t * 0.33) * 1.4;
-        const side = 5.4 + Math.cos(t * 0.27) * 0.9;
+        const back = 11.5;
+        const side = 5.4;
         camera.position.set(
           playerPos.x - playerTangent.x * back + playerNormal.x * side,
-          playerPos.y + 4.6 + Math.sin(t * 0.5) * 0.25,
+          playerPos.y + 4.6,
           playerPos.z - playerTangent.z * back + playerNormal.z * side
         );
         camera.lookAt(
@@ -1926,24 +2423,49 @@ export default function KarachiRushGame() {
             playerPos.z + playerTangent.z * 8
           )
         );
-      } else if (crashTimer > 0) {
-        camera.position.x += (Math.random() - 0.5) * 0.6;
-        camera.position.y += (Math.random() - 0.5) * 0.4;
+      } else if (cameraMode === "hood") {
+        const hoodCam = new THREE.Vector3()
+          .copy(playerPos)
+          .addScaledVector(playerTangent, -3.2)
+          .add(new THREE.Vector3(0, 3.4, 0));
+        camera.position.lerp(hoodCam, 0.15);
+        camera.lookAt(
+          new THREE.Vector3(
+            playerPos.x + playerTangent.x * 12,
+            playerPos.y + 1.2,
+            playerPos.z + playerTangent.z * 12
+          )
+        );
+      } else if (cameraMode === "cinematic") {
+        // Cinematic: low side-track angle, steady (no sway)
+        const back = 10;
+        const side = 0;
+        const cinCam = new THREE.Vector3()
+          .copy(playerPos)
+          .addScaledVector(playerTangent, -back)
+          .addScaledVector(playerNormal, side)
+          .add(new THREE.Vector3(0, 2.6, 0));
+        camera.position.lerp(cinCam, 0.1);
+        camera.lookAt(
+          new THREE.Vector3(
+            playerPos.x + playerTangent.x * 10,
+            playerPos.y + 1.6,
+            playerPos.z + playerTangent.z * 10
+          )
+        );
       } else {
-        // Portrait phones narrow the horizontal FOV to ~30 degrees, which turns
-        // the chase view into a close-up of the rear canopy. Pulling the camera
-        // back on a narrow aspect restores the road ahead.
+        // Chase cam (default): behind and above, portrait-safe
         const portraitBoost = THREE.MathUtils.clamp(0.78 / camera.aspect, 1, 1.9);
         const camFollowDist = (ctrl.nitro && playerNitro > 1 ? 13 : 11) * portraitBoost;
+        // Camera view height offset (autorush: Low / Normal / High / Roof)
+        const viewHeight = camView === "low" ? 3.2 : camView === "high" ? 6.4 : camView === "roof" ? 9.0 : 5.2;
+        const viewBack = camView === "roof" ? 10 : camFollowDist;
         const targetCamPos = new THREE.Vector3()
           .copy(playerPos)
-          .addScaledVector(playerTangent, -camFollowDist)
-          .add(new THREE.Vector3(0, 5.2 + (portraitBoost - 1) * 3.4, 0));
+          .addScaledVector(playerTangent, -viewBack)
+          .add(new THREE.Vector3(0, viewHeight + (portraitBoost - 1) * 3.4, 0));
         camera.position.lerp(targetCamPos, 0.12);
-      }
-      if (!isMenuIdle) {
-        const lookY = 2.0;
-        camera.lookAt(new THREE.Vector3(playerPos.x, playerPos.y + lookY, playerPos.z));
+        camera.lookAt(new THREE.Vector3(playerPos.x, playerPos.y + 2.0, playerPos.z));
       }
       // The dome is huge but finite; re-centre it so it can never be escaped.
       skyDome?.position.copy(camera.position);
@@ -2031,7 +2553,7 @@ export default function KarachiRushGame() {
         const rp = new THREE.Vector3().copy(pt).addScaledVector(normal, rival.lateralOffset);
         rival.group.position.copy(rp);
         rival.group.lookAt(new THREE.Vector3().copy(rp).add(tangent));
-        rival.frontWheel.rotation.y = Math.sin(now / 300 + rival.u * 100) * 0.2;
+        rival.frontWheel.rotation.y = 0;
       }
       positionRank = isRacing ? rank : positionRank;
 
@@ -2040,8 +2562,7 @@ export default function KarachiRushGame() {
         if (o.speed > 0) {
           o.u = (o.u + (o.speed * dt) / trackLength) % 1.0;
           const { pt, tangent, normal } = splineFrame(o.u);
-          const weave = Math.sin(now / 900 + o.weavePhase) * 2.2;
-          const lat = Math.max(-TRACK.roadWidth * 0.44, Math.min(TRACK.roadWidth * 0.44, o.lateral + weave));
+          const lat = Math.max(-TRACK.roadWidth * 0.44, Math.min(TRACK.roadWidth * 0.44, o.lateral));
           o.curLateral = lat;
           o.mesh.position.set(pt.x + normal.x * lat, pt.y, pt.z + normal.z * lat);
           o.mesh.lookAt(new THREE.Vector3().copy(pt).add(tangent));
@@ -2061,10 +2582,16 @@ export default function KarachiRushGame() {
               playerSpeed *= 0.25;
               crashTimer = 0.55;
               crashes++;
+              raceChallenge.current.crashes++;
               o.hitCooldown = 2.5;
               totalScore = Math.max(0, totalScore - 100);
               setDriftPopup({ text: "CRASH! −100", id: Date.now() });
               soundRef.current?.playCrash();
+              // Cinematic crash: crash sound word
+              setCrashWord("CRASH!");
+              setCinematicShowing(true);
+              setTimeout(() => setCinematicShowing(false), 1200);
+              soundRef.current?.duckMusic(0.3, 700);
             } else if (o.kind === "breaker") {
               playerSpeed *= 0.82;
               playerNitro = Math.max(0, playerNitro - 8);
@@ -2086,6 +2613,7 @@ export default function KarachiRushGame() {
             }
           } else if (!o.dodged) {
             o.dodged = true;
+            raceChallenge.current.traps++;
             if (o.kind !== "oil" && o.kind !== "manhole" && o.kind !== "breaker") {
               trapsDodgedThisLap++;
               trapsDodged++;
@@ -2107,13 +2635,14 @@ export default function KarachiRushGame() {
           const cu = (row.u + (c * 8) / trackLength) % 1.0;
           const rel = uDistanceMeters(prevU, cu, trackLength);
           mesh.rotation.y += dt * 2.4;
-          mesh.position.y = (mesh.userData as { baseY: number }).baseY + Math.sin(now / 400 + c) * 0.35;
+          mesh.position.y = (mesh.userData as { baseY: number }).baseY;
             if (isRacing && rel >= -2 && rel <= OBSTACLE_TUNING.coinPickupRadius) {
               const latDiff = Math.abs(playerLateral - row.lateral);
               if (latDiff < OBSTACLE_TUNING.coinPickupRadius) {
                 mesh.visible = false;
                 runCoins += diff.coinValue;
                 lapsRunCoins += diff.coinValue;
+                raceChallenge.current.coins++;
                 totalScore += Math.round(20 * diff.scoreMult);
                 soundRef.current?.playCoin();
               }
@@ -2134,6 +2663,7 @@ export default function KarachiRushGame() {
       }
 
       // 8. engine sound
+      playerNitroRef.current = playerNitro;
       soundRef.current?.updateEngine(playerSpeed, ctrl.throttle > 0, ctrl.nitro && playerNitro > 1);
 
       // 9. HUD (one state update per frame)
@@ -2248,6 +2778,24 @@ export default function KarachiRushGame() {
 
   return (
     <div id="game-container">
+      <div className="debug-tele">
+        <div className="debug-row">
+          <span className="debug-label">FPS</span>
+          <span className="debug-val" id="debugFps">{fpsRef.current}</span>
+        </div>
+        <div className="debug-row">
+          <span className="debug-label">LAP</span>
+          <span className="debug-val">{hud.lap}/{totalLaps}</span>
+        </div>
+        <div className="debug-row">
+          <span className="debug-label">SPD</span>
+          <span className="debug-val">{hud.speed} km/h</span>
+        </div>
+        <div className="debug-row">
+          <span className="debug-label">BANK</span>
+          <span className="debug-val">{bank}</span>
+        </div>
+      </div>
       {menuWeather === "rain" && (
         <div className="weather-drop" aria-hidden="true">
           {[...Array(120)].map((_, i) => (
@@ -2281,7 +2829,7 @@ export default function KarachiRushGame() {
           HUD — three corners, empty middle
           --------------------------------------------------------- */}
       {(phase === "racing" || phase === "countdown" || phase === "paused") && (
-        <div className="game-hud">
+        <div className="game-hud" style={{ transform: beatPulse ? "scale(1.03)" : "scale(1)", transition: "transform 60ms" }}>
           <div className="hud-panel hud-top-left">
             <div className="hud-pos">
               <span className="pos-main">{ordinal(hud.position)}</span>
@@ -2319,6 +2867,14 @@ export default function KarachiRushGame() {
             <span className="speed-unit">km/h</span>
           </div>
 
+          {/* Car label: position + speed overlay (autorush style) */}
+          {phase === "racing" && (
+            <div className="car-label">
+              <div className="cl-pos">{ordinal(hud.position)}</div>
+              <div className="cl-spd"><span>{hud.speed}</span><small>km/h</small></div>
+            </div>
+          )}
+
           <div className="hud-bottom-right">
             <div className="nitro-ring" title={`Nitro ${hud.nitro}%`}>
               <svg className="nitro-arc" width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
@@ -2341,10 +2897,10 @@ export default function KarachiRushGame() {
               </div>
             </div>
 
-            <div className="hud-tools">
+            <div className="hud-tools hud-right">
               <button
                 type="button"
-                className="hud-btn"
+                className="hud-btn icon-btn"
                 aria-label={soundEnabled ? "Mute sound" : "Unmute sound"}
                 aria-pressed={!soundEnabled}
                 onClick={() => setSoundEnabled((v) => !v)}
@@ -2353,7 +2909,7 @@ export default function KarachiRushGame() {
               </button>
               <button
                 type="button"
-                className="hud-btn"
+                className="hud-btn icon-btn"
                 aria-label={`Time of day: ${TIME_LABELS[hud.timeMode]}. Change`}
                 title={TIME_LABELS[hud.timeMode]}
                 onClick={() => engineRef.current?.cycleTimeMode()}
@@ -2362,11 +2918,72 @@ export default function KarachiRushGame() {
               </button>
               <button
                 type="button"
-                className={`hud-btn ${phase === "paused" ? "hud-btn--on" : ""}`}
+                className="hud-btn icon-btn"
+                aria-label={`Camera: ${cameraMode}. Change (C key)`}
+                title={`CAM: ${cameraMode.toUpperCase()}`}
+                onClick={() => setCameraMode((m) => (m === "chase" ? "hood" : m === "hood" ? "cinematic" : "chase"))}
+              >
+                <span className="hud-btn-label">CAM {cameraMode === "chase" ? "CHASE" : cameraMode === "hood" ? "HOOD" : "CINE"}</span>
+              </button>
+              <button
+                type="button"
+                className={`hud-btn icon-btn ${phase === "paused" ? "hud-btn--on" : ""}`}
                 aria-label={phase === "paused" ? "Resume race" : "Pause race"}
                 onClick={() => engineRef.current?.togglePause()}
               >
                 {phase === "paused" ? <PlayIcon size={18} /> : <PauseIcon size={18} />}
+              </button>
+            </div>
+
+            {/* Touch controls (shown on touch devices, autorush style) */}
+            <div className="touch-controls">
+              <button
+                type="button"
+                className="touch-btn touch-brake"
+                aria-label="Brake / reverse"
+                title="BRAKE"
+                onTouchStart={(e) => { e.preventDefault(); controlsRef.current.brake = 1; }}
+                onTouchEnd={(e) => { e.preventDefault(); controlsRef.current.brake = 0; }}
+                onPointerDown={(e) => { if (e.pointerType !== "touch") return; controlsRef.current.brake = 1; }}
+                onPointerUp={(e) => { if (e.pointerType !== "touch") return; controlsRef.current.brake = 0; }}
+              >
+                <span className="touch-label">↓ BRAKE</span>
+              </button>
+              <button
+                type="button"
+                className="touch-btn touch-gas"
+                aria-label="Accelerate / gas"
+                title="GAS"
+                onTouchStart={(e) => { e.preventDefault(); controlsRef.current.throttle = 1; }}
+                onTouchEnd={(e) => { e.preventDefault(); controlsRef.current.throttle = 0; }}
+                onPointerDown={(e) => { if (e.pointerType !== "touch") return; controlsRef.current.throttle = 1; }}
+                onPointerUp={(e) => { if (e.pointerType !== "touch") return; controlsRef.current.throttle = 0; }}
+              >
+                <span className="touch-label">↑ GAS</span>
+              </button>
+              <button
+                type="button"
+                className="touch-btn touch-drift"
+                aria-label="Drift"
+                title="DRIFT"
+                onTouchStart={(e) => { e.preventDefault(); controlsRef.current.drift = true; }}
+                onTouchEnd={(e) => { e.preventDefault(); controlsRef.current.drift = false; }}
+                onPointerDown={(e) => { if (e.pointerType !== "touch") return; controlsRef.current.drift = true; }}
+                onPointerUp={(e) => { if (e.pointerType !== "touch") return; controlsRef.current.drift = false; }}
+              >
+                <span className="touch-label">DRIFT</span>
+              </button>
+              <button
+                type="button"
+                className="touch-btn touch-nitro"
+                aria-label="Nitro boost"
+                title="N₂O"
+                onTouchStart={(e) => { e.preventDefault(); controlsRef.current.nitro = true; }}
+                onTouchEnd={(e) => { e.preventDefault(); controlsRef.current.nitro = false; }}
+                onPointerDown={(e) => { if (e.pointerType !== "touch") return; controlsRef.current.nitro = true; }}
+                onPointerUp={(e) => { if (e.pointerType !== "touch") return; controlsRef.current.nitro = false; }}
+              >
+                <span className="touch-label">N₂O</span>
               </button>
             </div>
           </div>
@@ -2401,11 +3018,80 @@ export default function KarachiRushGame() {
         </div>
       )}
 
+      {/* Cinematic crash: letterbox bars + crash sound word */}
+      {cinematicShowing && crashWord && (
+        <div className="cine-overlay">
+          <i className="cine-bar top" />
+          <i className="cine-bar bot" />
+          <div className="cine-word">{crashWord}</div>
+        </div>
+      )}
+
       {/* ---------------------------------------------------------
           MENU — left rail, live scene on the right
           --------------------------------------------------------- */}
       {phase === "menu" && (
         <div className="screen-overlay menu-overlay">
+          {/* Top Floating Wallet Bar (autorush style) */}
+          <div className="wallet-bar">
+            <div className="chip w-item pts" title="Bank balance">
+              <CoinIcon size={16} />
+              <span id="walletPts">{fmtNum(bank)}</span>
+            </div>
+            {dailyStreak > 0 && (
+              <div className="chip w-item streak" title={`Daily streak: ${dailyStreak} days`}>
+                <span>🔥 {dailyStreak}</span>
+              </div>
+            )}
+            {/* Daily challenges chip */}
+            {dailyChallenges.length > 0 && (
+              <div
+                className="chip w-item chal"
+                title={`Daily challenges: ${dailyChallenges.filter((c) => challengeCompleted[c.id]).length}/${dailyChallenges.length} completed`}
+                onClick={() => setSettingsOpen(false)}
+              >
+                <span className="chal-progress">
+                  {dailyChallenges.filter((c) => challengeCompleted[c.id]).length}/{dailyChallenges.length}
+                </span>
+                <span className="chal-icon">🎯</span>
+              </div>
+            )}
+            <div className="chip w-item streak" title="Best Lap">
+              <span>BEST {hud.bestLap ? fmtTime(hud.bestLap) : "--:--"}</span>
+            </div>
+            <button
+              type="button"
+              className="chip set-btn"
+              id="soundBtn"
+              title={soundEnabled ? "Mute audio" : "Unmute audio"}
+              aria-label={soundEnabled ? "Mute audio" : "Unmute audio"}
+              onClick={() => setSoundEnabled((v) => !v)}
+            >
+              {soundEnabled ? <SpeakerIcon size={18} /> : <SpeakerOffIcon size={18} />}
+            </button>
+            <button
+              type="button"
+              className="chip set-btn"
+              id="settingsBtn"
+              title="Settings"
+              aria-label="Settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <GearIcon size={18} />
+            </button>
+          </div>
+
+          {/* Audio unlock overlay — browsers block AudioContext until first gesture */}
+          {!audioUnlocked && (
+            <div className="audio-unlock" onClick={() => {
+              soundRef.current?.init();
+              setAudioUnlocked(true);
+            }}>
+              <span className="unlock-text">Tap to enable sound & music</span>
+              <span className="unlock-icon">🔊</span>
+            </div>
+          )}
+
           <aside className="rail">
             <div className="rail-head">
               <div className="bank-pill">
@@ -2413,6 +3099,11 @@ export default function KarachiRushGame() {
                 <span className="bank-value">{fmtNum(bank)}</span>
                 <span className="bank-label">BANK</span>
               </div>
+              {dailyStreak > 0 && (
+                <div className="chip w-item streak" title={`Daily streak: ${dailyStreak} days`} style={{ marginLeft: 8 }}>
+                  <span>🔥 {dailyStreak}</span>
+                </div>
+              )}
               <button
                 type="button"
                 className="rail-icon"
@@ -2435,107 +3126,245 @@ export default function KarachiRushGame() {
             {/* Everything above and below this wrapper is pinned; only the
                 middle scrolls, so the one CTA is always on screen even at
                 1280x720 without shrinking the type. */}
-            <div className="rail-body">
-            <header className="brand">
-              <div className="game-title">KARACHI RUSH</div>
-              <div className="game-subtitle">SADAR · CHUNDRIGAR · CLIFTON</div>
-            </header>
+            <div className="rail-body scrollable">
+              <header className="brand">
+                <div className="game-title">KARACHI RUSH</div>
+                <div className="game-subtitle">SADAR · CHUNDRIGAR · CLIFTON</div>
+              </header>
 
-            <section className="rail-group">
-              <div className="section-label">Rickshaw</div>
-              <div className="garage-grid">
-                {VEHICLES.map((v) => {
-                  const isOwned = v.price === 0 || unlocked.includes(v.id);
-                  const isActive = selectedVehicle === v.id;
-                  const canBuy = !isOwned && bank >= v.price;
-                  return (
-                    <button
-                      key={v.id}
-                      type="button"
-                      className={`select-card ${isActive ? "active" : ""} ${isOwned ? "" : "locked"}`}
-                      aria-pressed={isActive}
-                      aria-disabled={!isOwned && !canBuy}
-                      onClick={() => {
-                        if (isOwned) setSelectedVehicle(v.id);
-                        else if (canBuy) buyVehicle(v.id);
-                      }}
-                    >
-                      <span className="select-card-name">{v.name}</span>
-                      <span className="select-card-stats">
-                        {v.topSpeed} <em>km/h</em>
-                      </span>
-                      <div className="select-card-stat-row">
-                        <div className="select-card-stat">
-                          <span className="select-card-stat-k">SPD</span>
-                          <div className="select-card-stat-bar">
-                            <span
-                              className="select-card-stat-fill"
-                              style={{ width: `${Math.round((v.topSpeed / 50) * 100)}%` }}
-                            />
-                          </div>
+
+
+              {/* Daily challenges (autorush style) */}
+              {dailyChallenges.length > 0 && (
+                <section className="rail-group">
+                  <div className="section-label">Daily Challenges</div>
+                  {dailyChallenges.map((c) => {
+                    const prog = challengeProgress[c.id] ?? 0;
+                    const done = challengeCompleted[c.id];
+                    const pct = Math.min(100, Math.round((prog / c.target) * 100));
+                    return (
+                      <div key={c.id} className="chal-row">
+                        <div className="chal-info">
+                          <span className="chal-title">{c.title}</span>
+                          <span className="chal-desc">{c.desc.replace("{target}", c.target.toString())}</span>
                         </div>
-                        <div className="select-card-stat">
-                          <span className="select-card-stat-k">ACC</span>
-                          <div className="select-card-stat-bar">
-                            <span
-                              className="select-card-stat-fill"
-                              style={{ width: `${Math.round((v.accel / 14) * 100)}%` }}
-                            />
-                          </div>
+                        <div className="chal-bar">
+                          <div
+                            className={`chal-fill ${done ? "done" : ""}`}
+                            style={{ width: done ? "100%" : `${pct}%` }}
+                          />
                         </div>
-                        <div className="select-card-stat">
-                          <span className="select-card-stat-k">HND</span>
-                          <div className="select-card-stat-bar">
-                            <span
-                              className="select-card-stat-fill"
-                              style={{ width: `${Math.round((v.handling / 1.2) * 100)}%` }}
-                            />
-                          </div>
+                        <div className="chal-reward">
+                          {done ? "✔" : `${prog}/${c.target}`}
+                          <span className="chal-reward-coin">+{c.reward}</span>
                         </div>
                       </div>
-                      <span className="select-card-tail">
-                        {isOwned ? (
-                          isActive ? (
-                            <span className="owned-tag">EQUIPPED</span>
-                          ) : null
-                        ) : (
-                          <>
-                            <CoinIcon size={12} />
-                            {fmtNum(v.price)}
-                          </>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+                    );
+                  })}
+                </section>
+              )}
 
-            <section className="rail-group">
-              <div className="section-label">Difficulty</div>
-              <div className="segmented" role="group" aria-label="Difficulty">
-                {DIFFICULTIES.map((d) => (
+              {/* Featured Auto Showcase Card with Arrow Pickers (autorush style) */}
+              <section className="rail-group">
+                <div className="section-label">Selected Rickshaw</div>
+                <div className="home-picker">
                   <button
-                    key={d.id}
                     type="button"
-                    className={`seg ${difficultyId === d.id ? "is-on" : ""}`}
-                    aria-pressed={difficultyId === d.id}
-                    onClick={() => setDifficultyId(d.id)}
+                    className="arrow"
+                    id="prevAuto"
+                    aria-label="Previous auto"
+                    onClick={() => {
+                      const idx = VEHICLES.findIndex((v) => v.id === selectedVehicle);
+                      const prevIdx = (idx - 1 + VEHICLES.length) % VEHICLES.length;
+                      setSelectedVehicle(VEHICLES[prevIdx].id);
+                    }}
                   >
-                    {d.label}
+                    ‹
                   </button>
-                ))}
-              </div>
-              <p className="seg-note">{curDifficulty.tagline}</p>
-            </section>
+                  <div className="auto-card" id="autoCard">
+                    <div className="auto-card-top">
+                      <div className="auto-name">{curVehicle.name}</div>
+                      <span className={`tier tier-${curVehicle.id}`}>
+                        {VEHICLE_TIERS[curVehicle.id] || "STANDARD"}
+                      </span>
+                    </div>
+                    <div className="auto-tag">{curVehicle.subtitle}</div>
+                    <div className="stats">
+                      <span className="stat-label">TOP SPEED</span>
+                      <div className="stat-bar">
+                        <i style={{ width: `${Math.round((curVehicle.topSpeed / 50) * 100)}%` }} />
+                      </div>
+                      <span className="stat-label">ACCEL</span>
+                      <div className="stat-bar">
+                        <i style={{ width: `${Math.round((curVehicle.accel / 14) * 100)}%` }} />
+                      </div>
+                      <span className="stat-label">HANDLING</span>
+                      <div className="stat-bar">
+                        <i style={{ width: `${Math.round((curVehicle.handling / 1.2) * 100)}%` }} />
+                      </div>
+                      <span className="stat-label">NITRO</span>
+                      <div className="stat-bar">
+                        <i style={{ width: `${Math.round((curVehicle.nitroBonus / 24) * 100)}%` }} />
+                      </div>
+                    </div>
+                    <div className="card-foot">
+                      <span className="auto-count">
+                        {VEHICLES.findIndex((v) => v.id === selectedVehicle) + 1} / {VEHICLES.length}
+                      </span>
+                      {/* Upgrades (owned vehicles only) */}
+                      {unlocked.includes(curVehicle.id) && (
+                        <div className="upgrades">
+                          {UPGRADE_STATS.map((s) => {
+                            const levels = upgradeLevels[selectedVehicle] ?? {};
+                            const lvl = levels[s.id] ?? 0;
+                            const cost = upgradeCost(s.id, lvl);
+                            const maxed = lvl >= MAX_UPGRADE_LEVEL;
+                            return (
+                              <button
+                                key={s.id}
+                                type="button"
+                                className={`upg-btn ${maxed ? "maxed" : ""}`}
+                                onClick={() => !maxed && buyUpgrade(s.id)}
+                                title={`${s.label} L${lvl} — ${maxed ? "MAXED" : cost + " coins"}`}
+                              >
+                                <span className="upg-label">{s.label[0]}</span>
+                                <span className="upg-lvl">L{lvl}</span>
+                                {!maxed && <span className="upg-cost">{cost}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {curVehicle.price === 0 || unlocked.includes(curVehicle.id) ? (
+                        <span className="owned-tag">EQUIPPED ✓</span>
+                      ) : bank >= curVehicle.price ? (
+                        <button
+                          type="button"
+                          className="buy-pill-btn"
+                          onClick={() => buyVehicle(curVehicle.id)}
+                        >
+                          <CoinIcon size={12} />
+                          UNLOCK FOR {fmtNum(curVehicle.price)}
+                        </button>
+                      ) : (
+                        <span className="lock-note">
+                          🔒 NEED {fmtNum(curVehicle.price)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="arrow"
+                    id="nextAuto"
+                    aria-label="Next auto"
+                    onClick={() => {
+                      const idx = VEHICLES.findIndex((v) => v.id === selectedVehicle);
+                      const nextIdx = (idx + 1) % VEHICLES.length;
+                      setSelectedVehicle(VEHICLES[nextIdx].id);
+                    }}
+                  >
+                    ›
+                  </button>
+                </div>
 
-            {/* LAPS and TIME are both three-way radios, so they share one row.
-                Side by side they cost 66 px instead of 152 px, which is what
-                lets the rail fit 1280x720 with no scrolling. */}
-            <div className="rail-pair">
+                {/* Quick garage selector cards (preserves .select-card and .buy-btn for E2E tests) */}
+                <div className="garage-grid mini-garage">
+                  {VEHICLES.map((v) => {
+                    const isOwned = v.price === 0 || unlocked.includes(v.id);
+                    const isActive = selectedVehicle === v.id;
+                    const canBuy = !isOwned && bank >= v.price;
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        className={`select-card ${isActive ? "active" : ""} ${isOwned ? "" : "locked"}`}
+                        aria-pressed={isActive}
+                        aria-disabled={!isOwned && !canBuy}
+                        onClick={() => {
+                          if (isOwned) setSelectedVehicle(v.id);
+                          else if (canBuy) buyVehicle(v.id);
+                          else setSelectedVehicle(v.id);
+                        }}
+                      >
+                        <span className="select-card-name">{v.name}</span>
+                        <span className="select-card-stats">
+                          {v.topSpeed} <em>km/h</em>
+                        </span>
+                        <div className="select-card-stat-row">
+                          <div className="select-card-stat">
+                            <span className="select-card-stat-k">SPD</span>
+                            <div className="select-card-stat-bar">
+                              <span
+                                className="select-card-stat-fill"
+                                style={{ width: `${Math.round((v.topSpeed / 50) * 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div className="select-card-stat">
+                            <span className="select-card-stat-k">ACC</span>
+                            <div className="select-card-stat-bar">
+                              <span
+                                className="select-card-stat-fill"
+                                style={{ width: `${Math.round((v.accel / 14) * 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div className="select-card-stat">
+                            <span className="select-card-stat-k">HND</span>
+                            <div className="select-card-stat-bar">
+                              <span
+                                className="select-card-stat-fill"
+                                style={{ width: `${Math.round((v.handling / 1.2) * 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <span className="select-card-tail">
+                          {isOwned ? (
+                            isActive ? (
+                              <span className="owned-tag">EQUIPPED</span>
+                            ) : null
+                          ) : (
+                            <span
+                              className="buy-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (canBuy) buyVehicle(v.id);
+                              }}
+                            >
+                              <CoinIcon size={12} />
+                              BUY {fmtNum(v.price)}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="rail-group">
+                <div className="section-label">Difficulty</div>
+                <div className="segmented" role="group" aria-label="Difficulty">
+                  {DIFFICULTIES.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className={`seg ${difficultyId === d.id ? "is-on" : ""}`}
+                      aria-pressed={difficultyId === d.id}
+                      onClick={() => setDifficultyId(d.id)}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="seg-note">{curDifficulty.tagline}</div>
+              </section>
+
               <section className="rail-group">
                 <div className="section-label">Laps</div>
-                <div className="segmented" role="group" aria-label="Laps">
+                <div className="segmented" role="group" aria-label="Race laps">
                   {[1, 3, 5].map((laps) => (
                     <button
                       key={laps}
@@ -2544,7 +3373,7 @@ export default function KarachiRushGame() {
                       aria-pressed={totalLaps === laps}
                       onClick={() => setTotalLaps(laps)}
                     >
-                      {laps}
+                      {laps} {laps === 1 ? "LAP" : "LAPS"}
                     </button>
                   ))}
                 </div>
@@ -2571,7 +3400,7 @@ export default function KarachiRushGame() {
                 </div>
               </section>
 
-              {/* Weather toggle — cosmetic only, does not change handling. */}
+              {/* Weather toggle */}
               <section className="rail-group">
                 <div className="section-label">Weather</div>
                 <div className="segmented" role="group" aria-label="Weather">
@@ -2584,7 +3413,7 @@ export default function KarachiRushGame() {
                       setMenuWeather("clear");
                     }}
                   >
-                    CLEAR
+                    CLEAR ☀️
                   </button>
                   <button
                     type="button"
@@ -2595,18 +3424,16 @@ export default function KarachiRushGame() {
                       setMenuWeather("rain");
                     }}
                   >
-                    RAIN
+                    RAIN 🌧️
                   </button>
                 </div>
               </section>
             </div>
-            </div>
 
-            <button type="button" className="action-btn" onClick={() => engineRef.current?.startRace()}>
+            <button type="button" className="action-btn big-btn" id="startBtn" onClick={() => engineRef.current?.startRace()}>
               <span>START RUSH</span>
-              <span className="cta-urdu" lang="ur">
-                چلو
-              </span>
+              <span className="cta-start">START</span>
+              <span className="go-arrow" aria-hidden="true">▶</span>
             </button>
 
             <div className="controls-hint">
@@ -2619,6 +3446,18 @@ export default function KarachiRushGame() {
                 <kbd>SPACE</kbd> drift · <kbd>N</kbd> nitro · <kbd>P</kbd> pause · <kbd>H</kbd> horn
               </span>
             </div>
+
+            <nav className="rail-links site-links" aria-label="Game Guides">
+              <a href="/how-to-play">How to Play</a>
+              <span>·</span>
+              <a href="/tracks">Tracks</a>
+              <span>·</span>
+              <a href="/autos">Autos</a>
+              <span>·</span>
+              <a href="/about">About</a>
+              <span>·</span>
+              <a href="/contact">Contact</a>
+            </nav>
           </aside>
         </div>
       )}
@@ -2641,8 +3480,9 @@ export default function KarachiRushGame() {
               </button>
             </div>
 
-            <div className="setting-row">
-              <span className="setting-k">Music</span>
+            <div className="settings-scroll">
+              <div className="setting-row">
+                <span className="setting-k">Music</span>
               <div className="volume-row">
                 <button
                   type="button"
@@ -2686,6 +3526,15 @@ export default function KarachiRushGame() {
               </div>
             </div>
 
+            <div className="setting-row credits-row">
+              <span className="setting-k">Audio credits</span>
+              <span className="setting-v">
+                Tyre squeal: audible-edge (CC BY 3.0). Nitro, coins, impacts:
+                Kenney, rubberduck (CC0). 3D models adapted: alnmathew,
+                Bongblender, 99.Miles, Nikitos & Nodeaxis Interactive.
+              </span>
+            </div>
+
             <div className="section-label">Controls</div>
             <dl className="keymap">
               <dt>
@@ -2713,11 +3562,41 @@ export default function KarachiRushGame() {
               <dd>Pause</dd>
             </dl>
 
+            <div className="section-label">Camera View</div>
+            <div className="segmented" role="group" aria-label="Camera view">
+              {CAM_VIEW_OPTIONS.map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`seg ${camView === v ? "is-on" : ""}`}
+                  aria-pressed={camView === v}
+                  onClick={() => setCamView(v)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="section-label">Vibration</div>
+            <div className="segmented" role="group" aria-label="Vibration">
+              {VIBRATION_OPTIONS.map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`seg ${vibration === v ? "is-on" : ""}`}
+                  aria-pressed={vibration === v}
+                  onClick={() => setVibration(v)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <button type="button" className="action-btn" onClick={() => setSettingsOpen(false)}>
               DONE
             </button>
           </div>
         </div>
+      </div>
       )}
 
       {/* ---------------------------------------------------------
@@ -2797,6 +3676,29 @@ export default function KarachiRushGame() {
                   <span>New balance</span>
                   <strong>{fmtNum(bank)}</strong>
                 </div>
+                {dailyBonus > 0 && (
+                  <div className="payout" style={{ marginTop: 10, borderTop: "1px solid var(--edge)", paddingTop: 8 }}>
+                    <span className="payout-num" style={{ color: "var(--jade)" }}>
+                      <CoinIcon size={20} />
+                      +{fmtNum(dailyBonus)}
+                    </span>
+                    <span className="payout-label">Daily streak ×{dailyStreak}</span>
+                  </div>
+                )}
+                {/* Daily challenge rewards */}
+                {dailyChallenges.some((c) => challengeCompleted[c.id]) && (
+                  <div className="payout" style={{ marginTop: 10, borderTop: "1px solid var(--edge)", paddingTop: 8 }}>
+                    <span className="payout-num" style={{ color: "var(--marigold)" }}>
+                      <CoinIcon size={20} />
+                      +{fmtNum(
+                        dailyChallenges
+                          .filter((c) => challengeCompleted[c.id])
+                          .reduce((sum, c) => sum + c.reward, 0)
+                      )}
+                    </span>
+                    <span className="payout-label">Challenge rewards</span>
+                  </div>
+                )}
 
                 <div className="stat-grid">
                   <div className="stat-box">
