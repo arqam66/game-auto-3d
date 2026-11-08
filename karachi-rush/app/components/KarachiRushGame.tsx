@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import {
   CoinIcon,
   BoltIcon,
@@ -214,6 +217,10 @@ export default function KarachiRushGame() {
     quitRace: () => void;
   } | null>(null);
 
+  // ---- post-processing (HD 3D: bloom + tone mapping)
+  const composerRef = useRef<EffectComposer | null>(null);
+  const bloomPassRef = useRef<UnrealBloomPass | null>(null);
+
   // ---- sound engine
   const soundRef = useRef<{
     init: () => void;
@@ -224,11 +231,12 @@ export default function KarachiRushGame() {
     playCrash: () => void;
     playCoin: () => void;
     playThud: () => void;
+    playCountdown: () => void;
     setMuted: (muted: boolean) => void;
   } | null>(null);
 
   // -------------------------------------------------------------
-  // PROCEDURAL WEB AUDIO SYNTHESIZER
+  // PROCEDURAL WEB AUDIO ENGINE — background music + SFX
   // -------------------------------------------------------------
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -237,110 +245,303 @@ export default function KarachiRushGame() {
 
   useEffect(() => {
     let audioCtx: AudioContext | null = null;
-    let engineOsc: OscillatorNode | null = null;
-    let engineGain: GainNode | null = null;
+    let masterGain: GainNode | null = null;
+    let musicGain: GainNode | null = null;
+    let sfxGain: GainNode | null = null;
+
+    // Engine voices (layered for a richer auto-rickshaw putt-putt)
+    let engineBass: OscillatorNode | null = null;
+    let engineBassGain: GainNode | null = null;
+    let engineLead: OscillatorNode | null = null;
+    let engineLeadGain: GainNode | null = null;
+    let engineFilter: BiquadFilterNode | null = null;
+
+    // Drift / nitro noise
+    let driftNoise: AudioBufferSourceNode | null = null;
     let driftGain: GainNode | null = null;
     let nitroGain: GainNode | null = null;
-    let masterGain: GainNode | null = null;
+
+    // Background music voices
+    let musicBass: OscillatorNode | null = null;
+    let musicBassGain: GainNode | null = null;
+    let musicLead: OscillatorNode | null = null;
+    let musicLeadGain: GainNode | null = null;
+    let musicArp: OscillatorNode | null = null;
+    let musicArpGain: GainNode | null = null;
+    let musicStartTime = 0;
+
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 
     const initAudio = () => {
       if (audioCtx) return;
-      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       audioCtx = new Ctx();
       masterGain = audioCtx.createGain();
-      masterGain.gain.value = soundEnabledRef.current ? 0.8 : 0;
+      masterGain.gain.value = soundEnabledRef.current ? 0.7 : 0;
       masterGain.connect(audioCtx.destination);
 
-      engineOsc = audioCtx.createOscillator();
-      engineGain = audioCtx.createGain();
-      engineOsc.type = "sawtooth";
-      engineOsc.frequency.setValueAtTime(22, audioCtx.currentTime);
-      engineGain.gain.setValueAtTime(0, audioCtx.currentTime);
-      const filter = audioCtx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(650, audioCtx.currentTime);
-      engineOsc.connect(filter);
-      filter.connect(engineGain);
-      engineGain.connect(masterGain);
-      engineOsc.start();
+      // --- sub-buses ---
+      musicGain = audioCtx.createGain();
+      musicGain.gain.value = soundEnabledRef.current ? 0.5 : 0;
+      musicGain.connect(masterGain);
 
+      sfxGain = audioCtx.createGain();
+      sfxGain.gain.value = soundEnabledRef.current ? 0.8 : 0;
+      sfxGain.connect(masterGain);
+
+      // --- engine voices ---
+      engineBass = audioCtx.createOscillator();
+      engineBass.type = "sawtooth";
+      engineBass.frequency.setValueAtTime(44, audioCtx.currentTime);
+      engineBassGain = audioCtx.createGain();
+      engineBassGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      engineBass.connect(engineBassGain);
+      engineBassGain.connect(sfxGain);
+      engineBass.start();
+
+      engineLead = audioCtx.createOscillator();
+      engineLead.type = "square";
+      engineLead.frequency.setValueAtTime(110, audioCtx.currentTime);
+      engineLeadGain = audioCtx.createGain();
+      engineLeadGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      engineFilter = audioCtx.createBiquadFilter();
+      engineFilter.type = "lowpass";
+      engineFilter.frequency.setValueAtTime(900, audioCtx.currentTime);
+      engineFilter.Q.setValueAtTime(2, audioCtx.currentTime);
+      engineLead.connect(engineFilter);
+      engineFilter.connect(engineLeadGain);
+      engineLeadGain.connect(sfxGain);
+      engineLead.start();
+
+      // --- drift noise ---
       const bufferSize = audioCtx.sampleRate * 2;
       const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
       const out = noiseBuffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) out[i] = Math.random() * 2 - 1;
-      const driftNoise = audioCtx.createBufferSource();
+      driftNoise = audioCtx.createBufferSource();
       driftNoise.buffer = noiseBuffer;
       driftNoise.loop = true;
       const driftFilter = audioCtx.createBiquadFilter();
       driftFilter.type = "bandpass";
-      driftFilter.frequency.setValueAtTime(1400, audioCtx.currentTime);
-      driftFilter.Q.setValueAtTime(4.0, audioCtx.currentTime);
+      driftFilter.frequency.setValueAtTime(1200, audioCtx.currentTime);
+      driftFilter.Q.setValueAtTime(3.5, audioCtx.currentTime);
       driftGain = audioCtx.createGain();
       driftGain.gain.setValueAtTime(0, audioCtx.currentTime);
       driftNoise.connect(driftFilter);
       driftFilter.connect(driftGain);
-      driftGain.connect(masterGain);
+      driftGain.connect(sfxGain);
       driftNoise.start();
 
+      // --- nitro ---
       const nitroOsc = audioCtx.createOscillator();
-      const nitroGainN = audioCtx.createGain();
       nitroOsc.type = "triangle";
-      nitroOsc.frequency.setValueAtTime(90, audioCtx.currentTime);
-      nitroGainN.gain.setValueAtTime(0, audioCtx.currentTime);
-      nitroOsc.connect(nitroGainN);
-      nitroGainN.connect(masterGain);
+      nitroOsc.frequency.setValueAtTime(110, audioCtx.currentTime);
+      nitroGain = audioCtx.createGain();
+      nitroGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      nitroOsc.connect(nitroGain);
+      nitroGain.connect(sfxGain);
       nitroOsc.start();
-      nitroGain = nitroGainN;
-    };
 
-    const beep = (freq: number, dur: number, vol: number, type: OscillatorType = "sine") => {
-      if (!audioCtx || !masterGain) return;
-      const osc = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-      g.gain.setValueAtTime(vol, audioCtx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
-      osc.connect(g);
-      g.connect(masterGain);
-      osc.start();
-      osc.stop(audioCtx.currentTime + dur);
-    };
+      // --- background music (procedural, loops) ---
+      musicStartTime = audioCtx.currentTime;
 
-    soundRef.current = {
-      init: initAudio,
-      updateEngine: (speed, throttle, nitro) => {
-        if (!audioCtx || !engineOsc || !engineGain) return;
-        const base = 24 + speed * 1.8 + (throttle ? 18 : 0) + (nitro ? 28 : 0);
-        engineOsc.frequency.setTargetAtTime(Math.min(180, base), audioCtx.currentTime, 0.05);
-        const gv = 0.08 + Math.min(0.2, (speed / 50) * 0.15) + (throttle ? 0.05 : 0);
-        engineGain.gain.setTargetAtTime(gv, audioCtx.currentTime, 0.05);
-      },
-      playDrift: (d) => {
-        if (!audioCtx || !driftGain) return;
-        driftGain.gain.setTargetAtTime(d ? 0.18 : 0, audioCtx.currentTime, 0.08);
-      },
-      playNitro: (a) => {
-        if (!audioCtx || !nitroGain) return;
-        nitroGain.gain.setTargetAtTime(a ? 0.25 : 0, audioCtx.currentTime, 0.05);
-      },
-      playBeep: (high) => beep(high ? 880 : 440, high ? 0.5 : 0.25, 0.3),
-      playCrash: () => beep(120, 0.3, 0.4, "square"),
-      playCoin: () => {
-        beep(1320, 0.09, 0.22, "triangle");
-        setTimeout(() => beep(1980, 0.12, 0.22, "triangle"), 60);
-      },
-      playThud: () => beep(80, 0.18, 0.3, "square"),
-      setMuted: (muted) => {
-        if (masterGain && audioCtx) {
-          masterGain.gain.setTargetAtTime(muted ? 0 : 0.8, audioCtx.currentTime, 0.05);
+      musicBass = audioCtx.createOscillator();
+      musicBass.type = "sine";
+      musicBass.frequency.setValueAtTime(55, audioCtx.currentTime); // A1
+      musicBassGain = audioCtx.createGain();
+      musicBassGain.gain.setValueAtTime(0.14, audioCtx.currentTime);
+      musicBass.connect(musicBassGain);
+      musicBassGain.connect(musicGain);
+      musicBass.start();
+
+      musicLead = audioCtx.createOscillator();
+      musicLead.type = "triangle";
+      musicLeadGain = audioCtx.createGain();
+      musicLeadGain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+      musicLead.connect(musicLeadGain);
+      musicLeadGain.connect(musicGain);
+      musicLead.start();
+
+      musicArp = audioCtx.createOscillator();
+      musicArp.type = "square";
+      musicArpGain = audioCtx.createGain();
+      musicArpGain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+      musicArp.connect(musicArpGain);
+      musicArpGain.connect(musicGain);
+      musicArp.start();
+
+      // --- music sequencer ---
+      const bassNotes = [55, 41.2, 36.7, 49]; // A1, F#1, E1, G#1
+      const leadNotes = [110, 130.8, 146.8, 164.8]; // A2, C#3, D#3, E3
+      const arpNotes = [220, 246.9, 277.2, 311.1, 277.2, 246.9]; // A3, B3, C#4, D#4...
+
+      let step = 0;
+      const tick = () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bar = t - musicStartTime;
+        const beatLen = 0.25; // 16th notes at ~120bpm
+
+        // bass changes every 4 beats
+        const bassIdx = Math.floor(bar / (beatLen * 4)) % bassNotes.length;
+        if (step % 4 === 0 && musicBassGain) {
+          musicBassGain.gain.setValueAtTime(0.14, t);
+          musicBassGain.gain.exponentialRampToValueAtTime(0.03, t + beatLen * 3.9);
+          musicBass!.frequency.setValueAtTime(bassNotes[bassIdx], t);
         }
-      },
+
+        // lead plays on beats 1 and 3
+        if (step % 8 === 0 || step % 8 === 4) {
+          const leadIdx = Math.floor(step / 8) % leadNotes.length;
+          if (musicLeadGain) {
+            musicLeadGain.gain.setValueAtTime(0.08, t);
+            musicLeadGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+            musicLead!.frequency.setValueAtTime(leadNotes[leadIdx], t);
+          }
+        }
+
+        // arp on every 16th
+        if (musicArpGain) {
+          const arpIdx = step % arpNotes.length;
+          musicArpGain.gain.setValueAtTime(0.05, t);
+          musicArpGain.gain.exponentialRampToValueAtTime(0.001, t + beatLen * 0.9);
+          musicArp!.frequency.setValueAtTime(arpNotes[arpIdx], t);
+        }
+
+        step = (step + 1) % 32;
+        setTimeout(tick, beatLen * 1000 * 0.985);
+      };
+      tick();
+
+      soundRef.current = {
+        init: initAudio,
+        updateEngine: (speed: number, throttle: boolean, nitro: boolean) => {
+          if (!audioCtx || !engineBass || !engineBassGain || !engineLead || !engineLeadGain || !engineFilter) return;
+          const base = 44 + speed * 2.2 + (throttle ? 22 : 0) + (nitro ? 34 : 0);
+          const targetFreq = Math.min(220, base);
+          engineBass.frequency.setTargetAtTime(targetFreq * 0.5, audioCtx.currentTime, 0.06);
+          engineLead.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.06);
+          const gv = 0.06 + Math.min(0.18, (speed / 50) * 0.14) + (throttle ? 0.04 : 0);
+          engineBassGain.gain.setTargetAtTime(gv * 0.7, audioCtx.currentTime, 0.06);
+          engineLeadGain.gain.setTargetAtTime(gv, audioCtx.currentTime, 0.06);
+          engineFilter.frequency.setTargetAtTime(700 + speed * 12 + (nitro ? 400 : 0), audioCtx.currentTime, 0.08);
+        },
+        playDrift: (d) => {
+          if (!audioCtx || !driftGain) return;
+          driftGain.gain.setTargetAtTime(d ? 0.22 : 0, audioCtx.currentTime, 0.06);
+        },
+        playNitro: (a) => {
+          if (!audioCtx || !nitroGain) return;
+          nitroGain.gain.setTargetAtTime(a ? 0.3 : 0, audioCtx.currentTime, 0.04);
+        },
+        playBeep: (high: boolean) => {
+          if (!audioCtx || !sfxGain) return;
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(high ? 1100 : 550, audioCtx.currentTime);
+          g.gain.setValueAtTime(0.25, audioCtx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (high ? 0.4 : 0.2));
+          osc.connect(g);
+          g.connect(sfxGain);
+          osc.start();
+          osc.stop(audioCtx.currentTime + (high ? 0.4 : 0.2));
+        },
+        playCrash: () => {
+          if (!audioCtx || !sfxGain) return;
+          // noise burst + low thud
+          const noise = audioCtx.createBufferSource();
+          noise.buffer = noiseBuffer;
+          const nf = audioCtx.createBiquadFilter();
+          nf.type = "lowpass";
+          nf.frequency.setValueAtTime(800, audioCtx.currentTime);
+          const ng = audioCtx.createGain();
+          ng.gain.setValueAtTime(0.35, audioCtx.currentTime);
+          ng.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+          noise.connect(nf);
+          nf.connect(ng);
+          ng.connect(sfxGain);
+          noise.start();
+          noise.stop(audioCtx.currentTime + 0.4);
+          // low thud
+          const thud = audioCtx.createOscillator();
+          thud.type = "sine";
+          thud.frequency.setValueAtTime(60, audioCtx.currentTime);
+          const tg = audioCtx.createGain();
+          tg.gain.setValueAtTime(0.3, audioCtx.currentTime);
+          tg.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+          thud.connect(tg);
+          tg.connect(sfxGain);
+          thud.start();
+          thud.stop(audioCtx.currentTime + 0.3);
+        },
+        playCoin: () => {
+          if (!audioCtx || !sfxGain) return;
+          const ctx = audioCtx;
+          const sfx = sfxGain;
+          const t = ctx.currentTime;
+          [1320, 1980, 2640].forEach((f, i) => {
+            const osc = ctx.createOscillator();
+            const g = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(f, t);
+            g.gain.setValueAtTime(0.18, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.15 + i * 0.08);
+            osc.connect(g);
+            g.connect(sfx);
+            osc.start();
+            osc.stop(t + 0.15 + i * 0.08);
+          });
+        },
+        playThud: () => {
+          if (!audioCtx || !sfxGain) return;
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+          g.gain.setValueAtTime(0.25, audioCtx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+          osc.connect(g);
+          g.connect(sfxGain);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.15);
+        },
+        playCountdown: () => {
+          if (!audioCtx || !sfxGain) return;
+          const ctx = audioCtx;
+          const sfx = sfxGain;
+          const t = ctx.currentTime;
+          [660, 880, 1100, 1320].forEach((f, i) => {
+            const osc = ctx.createOscillator();
+            const g = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(f, t + i * 0.25);
+            g.gain.setValueAtTime(0.2, t + i * 0.25);
+            g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.25 + 0.2);
+            osc.connect(g);
+            g.connect(sfx);
+            osc.start(t + i * 0.25);
+            osc.stop(t + i * 0.25 + 0.2);
+          });
+        },
+        setMuted: (muted: boolean) => {
+          if (masterGain && audioCtx) {
+            masterGain.gain.setTargetAtTime(muted ? 0 : 0.7, audioCtx.currentTime, 0.05);
+          }
+          if (musicGain && audioCtx) {
+            musicGain.gain.setTargetAtTime(muted ? 0 : 0.5, audioCtx.currentTime, 0.05);
+          }
+          if (sfxGain && audioCtx) {
+            sfxGain.gain.setTargetAtTime(muted ? 0 : 0.8, audioCtx.currentTime, 0.05);
+          }
+        },
+      };
+      return () => {
+        if (audioCtx && audioCtx.state !== "closed") audioCtx.close().catch(() => {});
+        soundRef.current = null;
+        audioCtx = null;
+      };
     };
-    return () => {
-      if (audioCtx && audioCtx.state !== "closed") audioCtx.close().catch(() => {});
-      soundRef.current = null;
-    };
+    initAudio();
   }, []);
 
   // -------------------------------------------------------------
@@ -806,8 +1007,20 @@ export default function KarachiRushGame() {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.1;
       viewport.innerHTML = "";
       viewport.appendChild(renderer.domElement);
+
+      // ---- HD post-processing: bloom + tone mapping composer
+      composerRef.current = new EffectComposer(renderer);
+      composerRef.current.addPass(new RenderPass(scene, camera));
+      const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.2, 0.4, 0.85);
+      bloomPass.threshold = 0.15;
+      bloomPass.strength = 1.4;
+      bloomPass.radius = 0.6;
+      bloomPassRef.current = bloomPass;
+      composerRef.current.addPass(bloomPass);
 
       ambientLight = new THREE.HemisphereLight(TRACK.daySky, TRACK.groundColor, 0.85);
       scene.add(ambientLight);
@@ -1352,17 +1565,17 @@ export default function KarachiRushGame() {
 
       setPhaseState("countdown");
       setCountdownNum(3);
-      soundRef.current?.playBeep(false);
+      soundRef.current?.playCountdown();
       let count = 3;
       if (countdownInterval) clearInterval(countdownInterval);
       countdownInterval = setInterval(() => {
         count--;
         if (count > 0) {
           setCountdownNum(count);
-          soundRef.current?.playBeep(false);
+          soundRef.current?.playCountdown();
         } else if (count === 0) {
           setCountdownNum("GO!");
-          soundRef.current?.playBeep(true);
+          soundRef.current?.playCountdown();
         } else {
           if (countdownInterval) clearInterval(countdownInterval);
           countdownInterval = null;
@@ -1568,7 +1781,7 @@ export default function KarachiRushGame() {
       lastTime = now;
 
       if (manPhase === "paused") {
-        renderer.render(scene, camera);
+        composerRef.current?.render();
         return;
       }
 
@@ -1915,7 +2128,7 @@ export default function KarachiRushGame() {
         });
       }
 
-      renderer.render(scene, camera);
+      composerRef.current?.render();
     }
 
     animId = requestAnimationFrame(gameLoop);
@@ -1927,6 +2140,10 @@ export default function KarachiRushGame() {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      composerRef.current?.setSize(w, h);
+      if (bloomPassRef.current) {
+        bloomPassRef.current.resolution.set(w, h);
+      }
     };
     window.addEventListener("resize", onResize);
     const onBlur = () => { if (manPhase === "racing") engineRef.current?.togglePause(); };
@@ -1955,6 +2172,9 @@ export default function KarachiRushGame() {
         });
         renderer.dispose();
       }
+      composerRef.current?.dispose();
+      composerRef.current = null;
+      bloomPassRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, selectedVehicle]);

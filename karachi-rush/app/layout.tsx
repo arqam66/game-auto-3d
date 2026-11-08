@@ -32,6 +32,11 @@ export const metadata: Metadata = {
   title: "Karachi Rush — Auto-Rickshaw Racing",
   description:
     "Race a Karachi auto-rickshaw through Saddar, II Chundrigar and Clifton. Drift physics, nitro, three circuits of night racing — all in 3D in your browser.",
+  icons: [
+    { rel: "icon", type: "image/svg+xml", url: "/favicon.svg" },
+    { rel: "icon", type: "image/x-icon", url: "/favicon.ico" },
+    { rel: "apple-touch-icon", url: "/favicon.svg" },
+  ],
 };
 
 export const viewport: Viewport = {
