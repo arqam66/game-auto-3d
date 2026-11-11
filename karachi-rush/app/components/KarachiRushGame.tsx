@@ -50,10 +50,10 @@ type ObstacleKind = "tyre" | "cone" | "rickshaw" | "breaker" | "oil" | "manhole"
 type CameraMode = "chase" | "hood" | "cinematic";
 
 const VEHICLE_TIERS: Record<string, string> = {
-  baba: "STARTER",
-  queen: "STREET",
-  hassan: "PROTOTYPE",
-  bhatta: "CHAMPION",
+  baba: "SUZUKI STANDARD",
+  queen: "KHI CAB",
+  hassan: "TRUCK ART",
+  bhatta: "VIP DELUXE",
 };
 
 interface Obstacle {
@@ -1091,137 +1091,200 @@ export default function KarachiRushGame() {
     const lapSummaries: LapSummary[] = [];
 
     // ---------------------------------------------------------
-    // 3D Procedural Auto-Rickshaw Builder — Suzuki-style
-    // Wide boxy body, flat windshield, roof canopy, three wheels,
-    // bull bar, rear step bars, cargo rack on roof.
+    // 3D Procedural Auto-Rickshaw Builder — Karachi Suzuki Bolan / Auto
+    // Features:
+    // - Authentic two-tone body paint & chamakpatti floral waist trims
+    // - Boxy passenger cabin with open safety mesh and rear door bar
+    // - Prominent Suzuki-style chrome front bumper & bull bar
+    // - Twin rectangular chrome side mirrors & dual round yellow fog lamps
+    // - Overhead luggage carrier with crossbars
+    // - Rear mudflaps with white reflective reflector strips
     // ---------------------------------------------------------
     function createRickshawModel(bodyHex: string, canopyHex: string, frameHex: string, isPlayerVehicle = false, nameTag = "AI RACER") {
       const group = new THREE.Group();
-      const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(bodyHex), metalness: 0.3, roughness: 0.45 });
-      const canopyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(canopyHex), metalness: 0.1, roughness: 0.65 });
-      const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(frameHex), metalness: 0.75, roughness: 0.25 });
-      const chromeMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, metalness: 0.95, roughness: 0.05 });
-      const rubberMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.95 });
-      const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xaad4ee, transparent: true, opacity: 0.38, roughness: 0.05, transmission: 0.85 });
-      const lightMat = new THREE.MeshStandardMaterial({ color: 0xfff6a0, emissive: 0xffee55, emissiveIntensity: 1.2 });
-      const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1122, emissive: 0xff0022, emissiveIntensity: 0.9 });
+      const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(bodyHex), metalness: 0.35, roughness: 0.4 });
+      const canopyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(canopyHex), metalness: 0.15, roughness: 0.6 });
+      const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(frameHex), metalness: 0.8, roughness: 0.25 });
+      const chromeMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.95, roughness: 0.08 });
+      const rubberMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.95 });
+      const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xb5e0f8, transparent: true, opacity: 0.4, roughness: 0.05, transmission: 0.85 });
+      const lightMat = new THREE.MeshStandardMaterial({ color: 0xfff3a0, emissive: 0xffdf40, emissiveIntensity: 1.4 });
+      const amberMat = new THREE.MeshStandardMaterial({ color: 0xff8800, emissive: 0xff7700, emissiveIntensity: 1.0 });
+      const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1122, emissive: 0xff0022, emissiveIntensity: 1.1 });
+      const trimMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.6, roughness: 0.3 }); // Karachi chamakpatti gold
+      const mudflapMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.9 });
 
       // ── CHASSIS / FLOOR ─────────────────────────────────────────
-      const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.22, 3.4), frameMat);
+      const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.22, 3.4), frameMat);
       chassis.position.set(0, 0.72, -0.1);
+      chassis.castShadow = true;
       group.add(chassis);
 
-      // ── MAIN BODY (rear passenger box) ──────────────────────────
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.1, 2.4), bodyMat);
-      body.position.set(0, 1.42, -0.5);
+      // ── MAIN PASSENGER CABIN ────────────────────────────────────
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.05, 1.15, 2.35), bodyMat);
+      body.position.set(0, 1.42, -0.52);
       body.castShadow = true;
       group.add(body);
 
-      // ── FRONT ENGINE HOOD (narrower, sloped) ────────────────────
-      const hood = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 1.2), bodyMat);
-      hood.position.set(0, 0.98, 1.3);
+      // Chamakpatti decorative side strip (Karachi truck art waistline)
+      for (const sx of [-1.04, 1.04]) {
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 2.3), trimMat);
+        strip.position.set(sx, 1.35, -0.52);
+        group.add(strip);
+      }
+
+      // ── FRONT ENGINE HOOD (tapered Suzuki front) ────────────────
+      const hood = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.6, 1.25), bodyMat);
+      hood.position.set(0, 0.98, 1.25);
       hood.castShadow = true;
       group.add(hood);
 
-      // Sloped nose panel
-      const noseGeo = new THREE.CylinderGeometry(0.38, 0.75, 1.1, 5);
+      // Front nose panel slope
+      const noseGeo = new THREE.CylinderGeometry(0.42, 0.78, 1.1, 6);
       const nose = new THREE.Mesh(noseGeo, bodyMat);
-      nose.position.set(0, 0.95, 1.9);
+      nose.position.set(0, 0.95, 1.88);
       nose.rotation.x = Math.PI / 2;
       nose.castShadow = true;
       group.add(nose);
 
-      // ── WINDSHIELD ───────────────────────────────────────────────
-      const windshield = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.9), glassMat);
-      windshield.position.set(0, 1.68, 0.78);
-      windshield.rotation.x = -Math.PI / 7;
+      // Suzuki grille / badge plate
+      const grille = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.22, 0.08), chromeMat);
+      grille.position.set(0, 0.92, 2.45);
+      group.add(grille);
+
+      // ── WINDSHIELD & CABIN PILLARS ──────────────────────────────
+      const windshield = new THREE.Mesh(new THREE.PlaneGeometry(1.65, 0.92), glassMat);
+      windshield.position.set(0, 1.7, 0.76);
+      windshield.rotation.x = -Math.PI / 7.2;
       group.add(windshield);
 
-      // ── ROOF / CANOPY ────────────────────────────────────────────
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.98, 0.18, 2.5), canopyMat);
-      roof.position.set(0, 2.52, -0.3);
+      // Windshield wiper
+      const wiper = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.65, 4), frameMat);
+      wiper.rotation.z = Math.PI / 3.8;
+      wiper.position.set(-0.1, 1.62, 0.82);
+      group.add(wiper);
+
+      // ── ROOF / CANOPY (classic curved canopy) ───────────────────
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(2.06, 0.2, 2.55), canopyMat);
+      roof.position.set(0, 2.54, -0.32);
       roof.castShadow = true;
       group.add(roof);
 
-      // Roof rack bars (front and rear crossbar)
-      const rackBar = new THREE.CylinderGeometry(0.04, 0.04, 2.0, 6);
-      for (const sz of [-1.2, 0.9]) {
-        const bar = new THREE.Mesh(rackBar, chromeMat);
-        bar.rotation.z = Math.PI / 2;
-        bar.position.set(0, 2.65, sz);
-        group.add(bar);
-      }
-      // Rack side rails
-      const rackRail = new THREE.CylinderGeometry(0.03, 0.03, 2.1, 6);
-      for (const sx of [-0.9, 0.9]) {
-        const rail = new THREE.Mesh(rackRail, chromeMat);
-        rail.position.set(sx, 2.65, -0.15);
+      // Roof luggage rack side rails
+      const rackRailGeo = new THREE.CylinderGeometry(0.035, 0.035, 2.15, 6);
+      for (const sx of [-0.94, 0.94]) {
+        const rail = new THREE.Mesh(rackRailGeo, chromeMat);
+        rail.position.set(sx, 2.68, -0.2);
         group.add(rail);
       }
+      // Roof rack crossbars
+      const rackCrossGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.95, 6);
+      for (const sz of [-1.2, -0.6, 0.0, 0.6]) {
+        const bar = new THREE.Mesh(rackCrossGeo, chromeMat);
+        bar.rotation.z = Math.PI / 2;
+        bar.position.set(0, 2.68, sz);
+        group.add(bar);
+      }
 
-      // ── ROOF SUPPORT PILLARS ─────────────────────────────────────
-      const pillarGeo = new THREE.CylinderGeometry(0.055, 0.055, 1.42, 7);
-      for (const sx of [-0.95, 0.95]) {
-        for (const sz of [-1.45, 0.72]) {
+      // ── ROOF SUPPORT FRAME PILLARS ──────────────────────────────
+      const pillarGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.45, 6);
+      for (const sx of [-0.96, 0.96]) {
+        for (const sz of [-1.5, 0.7]) {
           const pillar = new THREE.Mesh(pillarGeo, frameMat);
-          pillar.position.set(sx, 1.81, sz);
+          pillar.position.set(sx, 1.82, sz);
           group.add(pillar);
         }
       }
 
-      // ── OPEN SIDE PANELS (left/right bottom trim) ────────────────
-      const sideTrimGeo = new THREE.BoxGeometry(0.08, 0.6, 2.35);
-      for (const sx of [-1.0, 1.0]) {
-        const trim = new THREE.Mesh(sideTrimGeo, frameMat);
-        trim.position.set(sx, 1.12, -0.5);
-        group.add(trim);
-      }
+      // ── HEAVY-DUTY SUZUKI BULL BAR ───────────────────────────────
+      const mainBumper = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 1.7, 8), chromeMat);
+      mainBumper.rotation.z = Math.PI / 2;
+      mainBumper.position.set(0, 0.78, 2.52);
+      group.add(mainBumper);
 
-      // ── BULL BAR (front protection) ──────────────────────────────
-      const hbar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 1.6, 8), chromeMat);
-      hbar.rotation.z = Math.PI / 2;
-      hbar.position.set(0, 0.78, 2.5);
-      group.add(hbar);
-      for (const sx of [-0.72, 0.72]) {
-        const vbar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.52, 7), chromeMat);
-        vbar.position.set(sx, 1.0, 2.5);
+      for (const sx of [-0.75, 0.75]) {
+        const vbar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.54, 6), chromeMat);
+        vbar.position.set(sx, 1.02, 2.52);
         group.add(vbar);
       }
 
-      // ── HEADLIGHT ───────────────────────────────────────────────
-      const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 0.18, 14), lightMat);
-      lamp.rotation.x = Math.PI / 2;
-      lamp.position.set(0, 1.02, 2.56);
-      group.add(lamp);
+      // Upper wrap-around bull bar guard
+      const upperGuard = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.25, 8), chromeMat);
+      upperGuard.rotation.z = Math.PI / 2;
+      upperGuard.position.set(0, 1.22, 2.5);
+      group.add(upperGuard);
 
-      // ── TAIL LIGHTS ─────────────────────────────────────────────
-      for (const sx of [-0.75, 0.75]) {
-        const tail = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.18, 0.08), tailMat);
-        tail.position.set(sx, 1.3, -1.72);
+      // ── HEADLIGHT & FOG LIGHTS ──────────────────────────────────
+      const centerHeadlight = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.22, 0.2, 14), lightMat);
+      centerHeadlight.rotation.x = Math.PI / 2;
+      centerHeadlight.position.set(0, 1.02, 2.56);
+      group.add(centerHeadlight);
+
+      // Dual yellow fog lamps on bumper
+      for (const sx of [-0.55, 0.55]) {
+        const fog = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 0.12, 10), amberMat);
+        fog.rotation.x = Math.PI / 2;
+        fog.position.set(sx, 0.78, 2.6);
+        group.add(fog);
+      }
+
+      // ── CHROME SIDE MIRRORS ──────────────────────────────────────
+      for (const sx of [-1.08, 1.08]) {
+        const mirrorStem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.35, 6), chromeMat);
+        mirrorStem.rotation.z = (sx > 0 ? -1 : 1) * Math.PI / 3;
+        mirrorStem.position.set(sx, 1.62, 0.85);
+        group.add(mirrorStem);
+
+        const mirrorGlass = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.12), chromeMat);
+        mirrorGlass.position.set(sx > 0 ? sx + 0.18 : sx - 0.18, 1.72, 0.85);
+        group.add(mirrorGlass);
+      }
+
+      // ── REAR TAIL LIGHTS & NUMBER PLATE ─────────────────────────
+      for (const sx of [-0.78, 0.78]) {
+        const tail = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.08), tailMat);
+        tail.position.set(sx, 1.3, -1.74);
         group.add(tail);
       }
 
-      // ── EXHAUST ─────────────────────────────────────────────────
-      const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.065, 0.55, 8), chromeMat);
+      // Karachi license plate on rear bumper ("KHI - 786")
+      const plateMesh = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.24, 0.05),
+        new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.5 }));
+      plateMesh.position.set(0, 0.88, -1.74);
+      group.add(plateMesh);
+
+      // ── EXHAUST PIPE ─────────────────────────────────────────────
+      const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.07, 0.6, 8), chromeMat);
       exhaust.rotation.x = Math.PI / 2;
-      exhaust.position.set(0.65, 0.58, -1.95);
+      exhaust.position.set(0.68, 0.58, -1.98);
       group.add(exhaust);
 
-      // ── REAR STEP BARS ───────────────────────────────────────────
+      // ── REAR STEP FOOTREST BARS ──────────────────────────────────
       for (const sy of [0.72, 0.52]) {
-        const stepBar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.65, 7), chromeMat);
+        const stepBar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.7, 8), chromeMat);
         stepBar.rotation.z = Math.PI / 2;
-        stepBar.position.set(0, sy, -1.75);
+        stepBar.position.set(0, sy, -1.78);
         group.add(stepBar);
       }
 
+      // ── REAR MUDFLAPS (Karachi auto style) ──────────────────────
+      for (const sx of [-0.98, 0.98]) {
+        const flap = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.45, 0.04), mudflapMat);
+        flap.position.set(sx, 0.42, -1.45);
+        group.add(flap);
+
+        const reflector = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.05), amberMat);
+        reflector.position.set(sx, 0.32, -1.47);
+        group.add(reflector);
+      }
+
       // ── WHEELS ───────────────────────────────────────────────────
-      const tireGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.32, 18);
+      const tireGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.34, 18);
       tireGeo.rotateZ(Math.PI / 2);
-      const hubGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.34, 10);
+      const hubGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.36, 12);
       hubGeo.rotateZ(Math.PI / 2);
 
-      // Front fork
+      // Front fork & wheel
       const fork = new THREE.Group();
       fork.position.set(0, 0.52, 1.72);
       const fTire = new THREE.Mesh(tireGeo, rubberMat);
@@ -1232,7 +1295,7 @@ export default function KarachiRushGame() {
       group.add(fork);
 
       // Rear axle wheels
-      for (const sx of [-1.08, 1.08]) {
+      for (const sx of [-1.1, 1.1]) {
         const rTire = new THREE.Mesh(tireGeo, rubberMat);
         rTire.position.set(sx, 0.52, -1.05);
         rTire.castShadow = true;

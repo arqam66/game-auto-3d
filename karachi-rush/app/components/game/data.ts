@@ -106,11 +106,11 @@ export const DISTRICTS: DistrictDef[] = [
 export const VEHICLES: VehicleDef[] = [
   {
     id: "baba",
-    name: "BABA AUTO",
-    subtitle: "Classic green & white street legend",
-    bodyColor: "#1E7A38",
-    canopyColor: "#F7F7F2",
-    frameColor: "#0E3B1A",
+    name: "SUZUKI BOLAN CARRIER",
+    subtitle: "Classic Karachi green & yellow commercial auto",
+    bodyColor: "#1B7339", // Iconic Karachi commercial green
+    canopyColor: "#F5C518", // Yellow top canopy
+    frameColor: "#111827", // Dark steel frame
     topSpeed: 42,
     accel: 11,
     handling: 1.0,
@@ -119,11 +119,11 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "queen",
-    name: "KARACHI QUEEN",
-    subtitle: "Crimson high-speed tuned edition",
-    bodyColor: "#B3122E",
-    canopyColor: "#FFF3B0",
-    frameColor: "#4A0612",
+    name: "SADDAR TAXI EXPRESS",
+    subtitle: "Authentic Black & Yellow (Kaali Peeli) Karachi cab",
+    bodyColor: "#1A1A1A", // Glossy black body
+    canopyColor: "#FFC72C", // Chrome-yellow roof
+    frameColor: "#2E2E2E",
     topSpeed: 46,
     accel: 12.5,
     handling: 1.1,
@@ -132,11 +132,11 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "hassan",
-    name: "HASSAN SPECIAL",
-    subtitle: "Chaudhry-tuned cyan prototype",
-    bodyColor: "#00B8D9",
-    canopyColor: "#0E1329",
-    frameColor: "#005577",
+    name: "KHI TRUCK-ART SPECIAL",
+    subtitle: "Hand-painted peacock cyan & floral chamakpatti",
+    bodyColor: "#0099B8", // Vivid Truck Art turquoise/cyan
+    canopyColor: "#E63946", // Floral ruby red roof
+    frameColor: "#053B48",
     topSpeed: 48,
     accel: 13,
     handling: 1.15,
@@ -145,11 +145,11 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "bhatta",
-    name: "BHATTA EXPRESS",
-    subtitle: "Golden turbo championship king",
-    bodyColor: "#E3A008",
-    canopyColor: "#17140A",
-    frameColor: "#2B2105",
+    name: "CLIFTON GOLD KING",
+    subtitle: "High-spec metallic bronze & deep emerald livery",
+    bodyColor: "#D49B24", // Royal mustard gold
+    canopyColor: "#0E3B24", // Forest green hood & roof
+    frameColor: "#241802",
     topSpeed: 50,
     accel: 14,
     handling: 1.2,
