@@ -1,4 +1,4 @@
-﻿---
+---
 name: egm-resolve
 license: Apache-2.0
 description: >-

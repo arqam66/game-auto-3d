@@ -1,4 +1,4 @@
-﻿---
+---
 name: egm-bootstrap
 license: Apache-2.0
 description: Bootstrap directory README.md files across a repository subtree.

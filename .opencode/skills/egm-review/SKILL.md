@@ -1,4 +1,4 @@
-﻿---
+---
 name: egm-review
 license: Apache-2.0
 description: >-

@@ -1,0 +1,17 @@
+{
+  "name": "karachi-rush",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev karachi-rush",
+    "build": "next build karachi-rush",
+    "start": "next start karachi-rush",
+    "lint": "next lint karachi-rush"
+  },
+  "dependencies": {
+    "next": "16.0.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "three": "0.160.0"
+  }
+}
