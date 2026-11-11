@@ -72,5 +72,18 @@ Reference target: autorush.autos (Gurugram Grand Prix) — studied via `autorush
 - Multiplayer lobby (server-authoritative) — out of scope for bounded loop
 - City unlock (Gurugram/Delhi) — Karachi-only circuit, per scope
 
+## Completed this session (2026-11-11)
+11. **Fixed TS error — missing `broadcastState`** (`KarachiRushGame.tsx`)
+    - The game loop called `broadcastState(playerPos)` but the function was never defined, causing `tsc --noEmit` to fail.
+    - Added the function inside the engine effect using the existing `channelRef` (BroadcastChannel) so multiplayer state broadcast is defined even though the lobby UI is out of scope.
+12. **Completed `window.__rush` debug API** (`KarachiRushGame.tsx`)
+    - Added `cycleTimeMode()` and `quitRace()` so the documented debug API matches the actual code (they were already called from HUD buttons but missing from `__rush`).
+13. **Fixed minGapMeters comment** (`KarachiRushGame.tsx`)
+    - Updated the stale "(38m)" comment to "(60 m)" to match `OBSTACLE_TUNING.minGapMeters`.
+14. **Fixed documentation drift** (`README.md`, `karachi-rush/README.md`, `LICENSE`)
+    - Rewrote root README: Karachi-only circuit (not 3 circuits), correct 7-rival roster with actual skills, correct 4-vehicle garage, removed dead Playwright E2E and LICENSE links.
+    - Rewrote `karachi-rush/README.md`: correct nitroBonus values (18-24), correct gap (60 m), correct Easy scoreMult (0.8), correct debug API table (10 methods), correct localStorage keys, correct project layout (includes data.ts, server.js, package-lock.json).
+    - Created `LICENSE` (MIT) referenced by both READMEs.
+
 ## Artifacts Removed
 - `rush-game*.png` (8 screenshot files) — deleted

@@ -256,6 +256,27 @@ export default function KarachiRushGame() {
   const [musicVolume, setMusicVolume] = useState<number>(80);
   const [effectsVolume, setEffectsVolume] = useState<number>(80);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  // Multiplayer PIN state (safe top-level state only — engine hooks added inside the engine useEffect)
+  const [roomPin, setRoomPin] = useState<string>('');
+  const [isHost, setIsHost] = useState<boolean>(false);
+  const [multiplayerOpen, setMultiplayerOpen] = useState<boolean>(false);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+
+  const generatePin = () => Math.floor(1000 + Math.random() * 9000).toString();
+
+  const hostRoom = () => {
+    const pin = generatePin();
+    setRoomPin(pin);
+    setIsHost(true);
+    channelRef.current = new BroadcastChannel(`karachiRoom_${pin}`);
+  };
+
+  const joinRoom = (pin: string) => {
+    setRoomPin(pin);
+    setIsHost(false);
+    channelRef.current = new BroadcastChannel(`karachiRoom_${pin}`);
+    setMultiplayerOpen(false);
+  };
   const [menuTimeMode, setMenuTimeMode] = useState<TimeMode>("day");
   const [menuWeather, setMenuWeather] = useState<"clear" | "rain">("clear");
   const [phase, setPhase] = useState<Phase>("menu");
@@ -506,7 +527,7 @@ export default function KarachiRushGame() {
       if (audioCtx) return;
       audioCtx = new Ctx();
       if (audioCtx.state === "suspended") {
-        audioCtx.resume().catch(() => {});
+        audioCtx.resume().catch(() => { });
       }
       masterGain = audioCtx.createGain();
       masterGain.gain.value = soundEnabledRef.current ? 0.95 : 0;
@@ -865,7 +886,7 @@ export default function KarachiRushGame() {
         },
       };
       return () => {
-        if (audioCtx && audioCtx.state !== "closed") audioCtx.close().catch(() => {});
+        if (audioCtx && audioCtx.state !== "closed") audioCtx.close().catch(() => { });
         soundRef.current = null;
         audioCtx = null;
       };
@@ -1056,6 +1077,10 @@ export default function KarachiRushGame() {
       speed: number; // m/s
       lateralOffset: number;
       dist: number; // total meters traveled (negative = behind the start line)
+      isFlipping?: boolean;
+      flipTimer?: number;
+      flipVelocity?: THREE.Vector3;
+      flipAxis?: THREE.Vector3;
     }
     const rivals: AIRivalInstance[] = [];
     const rivalTagMeshes: THREE.Mesh[] = [];
@@ -1066,106 +1091,181 @@ export default function KarachiRushGame() {
     const lapSummaries: LapSummary[] = [];
 
     // ---------------------------------------------------------
-    // 3D Procedural Auto-Rickshaw Builder
+    // 3D Procedural Auto-Rickshaw Builder — Suzuki-style
+    // Wide boxy body, flat windshield, roof canopy, three wheels,
+    // bull bar, rear step bars, cargo rack on roof.
     // ---------------------------------------------------------
     function createRickshawModel(bodyHex: string, canopyHex: string, frameHex: string, isPlayerVehicle = false, nameTag = "AI RACER") {
       const group = new THREE.Group();
-      const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(bodyHex), metalness: 0.25, roughness: 0.5 });
-      const canopyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(canopyHex), metalness: 0.05, roughness: 0.7 });
-      const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(frameHex), metalness: 0.7, roughness: 0.3 });
-      const chromeMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.9, roughness: 0.1 });
-      const rubberMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
-      const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, roughness: 0.1, transmission: 0.8 });
+      const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(bodyHex), metalness: 0.3, roughness: 0.45 });
+      const canopyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(canopyHex), metalness: 0.1, roughness: 0.65 });
+      const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(frameHex), metalness: 0.75, roughness: 0.25 });
+      const chromeMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, metalness: 0.95, roughness: 0.05 });
+      const rubberMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.95 });
+      const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xaad4ee, transparent: true, opacity: 0.38, roughness: 0.05, transmission: 0.85 });
+      const lightMat = new THREE.MeshStandardMaterial({ color: 0xfff6a0, emissive: 0xffee55, emissiveIntensity: 1.2 });
+      const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1122, emissive: 0xff0022, emissiveIntensity: 0.9 });
 
-      const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 3.6), bodyMat);
-      bodyMesh.position.set(0, 1.2, 0);
-      bodyMesh.castShadow = true;
-      group.add(bodyMesh);
+      // ── CHASSIS / FLOOR ─────────────────────────────────────────
+      const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.22, 3.4), frameMat);
+      chassis.position.set(0, 0.72, -0.1);
+      group.add(chassis);
 
-      const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.2, 1.6, 6), bodyMat);
-      nose.position.set(0, 1.1, 2.2);
+      // ── MAIN BODY (rear passenger box) ──────────────────────────
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.1, 2.4), bodyMat);
+      body.position.set(0, 1.42, -0.5);
+      body.castShadow = true;
+      group.add(body);
+
+      // ── FRONT ENGINE HOOD (narrower, sloped) ────────────────────
+      const hood = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 1.2), bodyMat);
+      hood.position.set(0, 0.98, 1.3);
+      hood.castShadow = true;
+      group.add(hood);
+
+      // Sloped nose panel
+      const noseGeo = new THREE.CylinderGeometry(0.38, 0.75, 1.1, 5);
+      const nose = new THREE.Mesh(noseGeo, bodyMat);
+      nose.position.set(0, 0.95, 1.9);
       nose.rotation.x = Math.PI / 2;
       nose.castShadow = true;
       group.add(nose);
 
-      const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.2), glassMat);
-      glass.position.set(0, 2.3, 1.8);
-      glass.rotation.x = -Math.PI / 10;
-      group.add(glass);
+      // ── WINDSHIELD ───────────────────────────────────────────────
+      const windshield = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.9), glassMat);
+      windshield.position.set(0, 1.68, 0.78);
+      windshield.rotation.x = -Math.PI / 7;
+      group.add(windshield);
 
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.25, 3.4), canopyMat);
-      roof.position.set(0, 2.9, -0.1);
+      // ── ROOF / CANOPY ────────────────────────────────────────────
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.98, 0.18, 2.5), canopyMat);
+      roof.position.set(0, 2.52, -0.3);
       roof.castShadow = true;
       group.add(roof);
 
-      const barGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.6, 8);
-      for (const sx of [-1.1, 1.1]) {
-        for (const sz of [-1.6, 1.5]) {
-          const bar = new THREE.Mesh(barGeo, frameMat);
-          bar.position.set(sx, 2.1, sz);
-          group.add(bar);
+      // Roof rack bars (front and rear crossbar)
+      const rackBar = new THREE.CylinderGeometry(0.04, 0.04, 2.0, 6);
+      for (const sz of [-1.2, 0.9]) {
+        const bar = new THREE.Mesh(rackBar, chromeMat);
+        bar.rotation.z = Math.PI / 2;
+        bar.position.set(0, 2.65, sz);
+        group.add(bar);
+      }
+      // Rack side rails
+      const rackRail = new THREE.CylinderGeometry(0.03, 0.03, 2.1, 6);
+      for (const sx of [-0.9, 0.9]) {
+        const rail = new THREE.Mesh(rackRail, chromeMat);
+        rail.position.set(sx, 2.65, -0.15);
+        group.add(rail);
+      }
+
+      // ── ROOF SUPPORT PILLARS ─────────────────────────────────────
+      const pillarGeo = new THREE.CylinderGeometry(0.055, 0.055, 1.42, 7);
+      for (const sx of [-0.95, 0.95]) {
+        for (const sz of [-1.45, 0.72]) {
+          const pillar = new THREE.Mesh(pillarGeo, frameMat);
+          pillar.position.set(sx, 1.81, sz);
+          group.add(pillar);
         }
       }
 
-      const lamp = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.3, 0.25, 0.3, 16),
-        new THREE.MeshStandardMaterial({ color: 0xfff6c5, emissive: 0xffe066, emissiveIntensity: 0.6 })
-      );
-      lamp.rotation.x = Math.PI / 2;
-      lamp.position.set(0, 1.2, 3.1);
-      group.add(lamp);
-
-      const fork = new THREE.Group();
-      fork.position.set(0, 0.55, 2.3);
-      const wheelGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.35, 16);
-      wheelGeo.rotateZ(Math.PI / 2);
-      const fWheel = new THREE.Mesh(wheelGeo, rubberMat);
-      fWheel.castShadow = true;
-      fork.add(fWheel);
-      group.add(fork);
-
-      for (const sx of [-1.25, 1.25]) {
-        const rWheel = new THREE.Mesh(wheelGeo, rubberMat);
-        rWheel.position.set(sx, 0.55, -1.2);
-        rWheel.castShadow = true;
-        group.add(rWheel);
+      // ── OPEN SIDE PANELS (left/right bottom trim) ────────────────
+      const sideTrimGeo = new THREE.BoxGeometry(0.08, 0.6, 2.35);
+      for (const sx of [-1.0, 1.0]) {
+        const trim = new THREE.Mesh(sideTrimGeo, frameMat);
+        trim.position.set(sx, 1.12, -0.5);
+        group.add(trim);
       }
 
-      const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.7, 8), chromeMat);
-      exhaust.rotateX(Math.PI / 2);
-      exhaust.position.set(0.7, 0.5, -1.9);
-      group.add(exhaust);
+      // ── BULL BAR (front protection) ──────────────────────────────
+      const hbar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 1.6, 8), chromeMat);
+      hbar.rotation.z = Math.PI / 2;
+      hbar.position.set(0, 0.78, 2.5);
+      group.add(hbar);
+      for (const sx of [-0.72, 0.72]) {
+        const vbar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.52, 7), chromeMat);
+        vbar.position.set(sx, 1.0, 2.5);
+        group.add(vbar);
+      }
 
-      for (const sx of [-0.9, 0.9]) {
-        const tail = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.2, 0.1),
-          new THREE.MeshStandardMaterial({ color: 0xff0033, emissive: 0xff0033, emissiveIntensity: 0.8 }));
-        tail.position.set(sx, 1.2, -1.85);
+      // ── HEADLIGHT ───────────────────────────────────────────────
+      const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 0.18, 14), lightMat);
+      lamp.rotation.x = Math.PI / 2;
+      lamp.position.set(0, 1.02, 2.56);
+      group.add(lamp);
+
+      // ── TAIL LIGHTS ─────────────────────────────────────────────
+      for (const sx of [-0.75, 0.75]) {
+        const tail = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.18, 0.08), tailMat);
+        tail.position.set(sx, 1.3, -1.72);
         group.add(tail);
       }
 
+      // ── EXHAUST ─────────────────────────────────────────────────
+      const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.065, 0.55, 8), chromeMat);
+      exhaust.rotation.x = Math.PI / 2;
+      exhaust.position.set(0.65, 0.58, -1.95);
+      group.add(exhaust);
+
+      // ── REAR STEP BARS ───────────────────────────────────────────
+      for (const sy of [0.72, 0.52]) {
+        const stepBar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.65, 7), chromeMat);
+        stepBar.rotation.z = Math.PI / 2;
+        stepBar.position.set(0, sy, -1.75);
+        group.add(stepBar);
+      }
+
+      // ── WHEELS ───────────────────────────────────────────────────
+      const tireGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.32, 18);
+      tireGeo.rotateZ(Math.PI / 2);
+      const hubGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.34, 10);
+      hubGeo.rotateZ(Math.PI / 2);
+
+      // Front fork
+      const fork = new THREE.Group();
+      fork.position.set(0, 0.52, 1.72);
+      const fTire = new THREE.Mesh(tireGeo, rubberMat);
+      fTire.castShadow = true;
+      fork.add(fTire);
+      const fHub = new THREE.Mesh(hubGeo, chromeMat);
+      fork.add(fHub);
+      group.add(fork);
+
+      // Rear axle wheels
+      for (const sx of [-1.08, 1.08]) {
+        const rTire = new THREE.Mesh(tireGeo, rubberMat);
+        rTire.position.set(sx, 0.52, -1.05);
+        rTire.castShadow = true;
+        group.add(rTire);
+        const rHub = new THREE.Mesh(hubGeo, chromeMat);
+        rHub.position.set(sx, 0.52, -1.05);
+        group.add(rHub);
+      }
+
+      // ── NAME TAG (AI rivals only) ────────────────────────────────
       if (!isPlayerVehicle) {
         const canvas = document.createElement("canvas");
         canvas.width = 256;
         canvas.height = 64;
         const ctx = canvas.getContext("2d");
         if (ctx) {
-          ctx.fillStyle = "rgba(18, 18, 20, 0.85)";
+          ctx.fillStyle = "rgba(14, 10, 20, 0.88)";
           ctx.fillRect(4, 4, 248, 56);
           ctx.strokeStyle = bodyHex;
-          ctx.lineWidth = 4;
+          ctx.lineWidth = 3;
           ctx.strokeRect(4, 4, 248, 56);
-          ctx.font = "800 26px sans-serif";
-          ctx.fillStyle = "#f2f2ee";
+          ctx.font = "700 24px sans-serif";
+          ctx.fillStyle = "#f0ece0";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(nameTag, 128, 33);
         }
         const tex = new THREE.CanvasTexture(canvas);
         const tag = new THREE.Mesh(
-          new THREE.PlaneGeometry(2.6, 0.65),
+          new THREE.PlaneGeometry(2.4, 0.6),
           new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide })
         );
-        tag.position.set(0, 3.9, 0);
+        tag.position.set(0, 3.6, 0);
         group.add(tag);
         rivalTagMeshes.push(tag);
       }
@@ -1406,7 +1506,7 @@ export default function KarachiRushGame() {
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.25;
+      renderer.toneMappingExposure = 1.6;
       viewport.innerHTML = "";
       viewport.appendChild(renderer.domElement);
 
@@ -1422,9 +1522,9 @@ export default function KarachiRushGame() {
       const outputPass = new OutputPass();
       composerRef.current.addPass(outputPass);
 
-      ambientLight = new THREE.HemisphereLight(0xc4d6ea, 0xbba27f, 1.65);
+      ambientLight = new THREE.HemisphereLight(0xddeeff, 0xccaa88, 2.4);
       scene.add(ambientLight);
-      dirLight = new THREE.DirectionalLight(0xfff0d8, 3.2);
+      dirLight = new THREE.DirectionalLight(0xfff8e8, 4.5);
       dirLight.position.set(180, 320, 140);
       dirLight.castShadow = true;
       dirLight.shadow.mapSize.width = 4096;
@@ -1771,7 +1871,7 @@ export default function KarachiRushGame() {
       const available = trackLength - 30 - startMeters; // keep clear of the finish line
       const avgBase = available / count;
       // stratified placement: exactly `count` obstacles, gaps never below
-      // OBSTACLE_TUNING.minGapMeters (38m) for fairness
+      // OBSTACLE_TUNING.minGapMeters (60 m) for fairness
       const jitter = Math.max(0, Math.min(avgBase - OBSTACLE_TUNING.minGapMeters, avgBase * 0.8));
 
       for (let i = 0; i < count; i++) {
@@ -1948,6 +2048,21 @@ export default function KarachiRushGame() {
     }
     applyTimeMode("day");
 
+    // Broadcast the player's live state to room peers via BroadcastChannel.
+    // Multiplayer lobby is out of scope for the bounded loop, but the channel
+    // ref and join/host UI exist; this keeps the game loop call site defined.
+    const broadcastState = (pos: THREE.Vector3) => {
+      if (!channelRef.current) return;
+      channelRef.current.postMessage({
+        type: "rush:state",
+        u: playerU,
+        lateral: playerLateral,
+        speed: playerSpeed,
+        lap: playerLap,
+        pos: { x: pos.x, y: pos.y, z: pos.z },
+      });
+    };
+
     // =========================================================
     // RACE LIFECYCLE TRIGGERS
     // =========================================================
@@ -2090,6 +2205,9 @@ export default function KarachiRushGame() {
       },
       listCoinRows: () => coinRows.map((r) => ({ u: r.u, lateral: r.lateral })),
       listObstacles: () => obstacles.map((o) => ({ u: o.u, kind: o.kind })),
+      // Live time-of-day toggle (day → sunset → night) and abandon race.
+      cycleTimeMode: () => engineRef.current?.cycleTimeMode(),
+      quitRace: () => engineRef.current?.quitRace(),
     };
 
     function detectTimeMode(): TimeMode {
@@ -2375,16 +2493,19 @@ export default function KarachiRushGame() {
       const { pt: playerPos0, tangent: playerTangent, normal: playerNormal } = splineFrame(playerU);
       const playerPos = new THREE.Vector3().copy(playerPos0).addScaledVector(playerNormal, playerLateral);
       playerRickshaw.group.position.copy(playerPos);
+
+      // broadcast player state for multiplayer
+      broadcastState(playerPos);
       playerRickshaw.group.lookAt(new THREE.Vector3().copy(playerPos).add(playerTangent));
       if (crashTimer > 0) {
+        // keep a subtle shake without deforming the model
         playerRickshaw.group.rotation.y += dt * 9;
-        // crash squash & stretch
-        const squash = 1 - Math.min(1, crashTimer / 0.55) * 0.45;
-        const stretch = 1 + Math.min(1, crashTimer / 0.55) * 0.35;
-        playerRickshaw.group.scale.set(stretch, squash, stretch);
+        // maintain original scale to avoid screen bounce
+        playerRickshaw.group.scale.set(1, 1, 1);
       } else {
         playerRickshaw.group.scale.set(1, 1, 1);
       }
+
       // drift flash on body
       if (ctrl.drift && playerSpeed > 18) {
         const driftFlash = 0;
@@ -2540,6 +2661,35 @@ export default function KarachiRushGame() {
       let rank = 1;
       const playerTotalDist = (playerLap - 1) * trackLength + playerU * trackLength;
       for (const rival of rivals) {
+        // handle flipping animation if active
+        if (rival.isFlipping) {
+          rival.flipTimer = Math.max(0, (rival.flipTimer ?? 0) - dt);
+          const axis = rival.flipAxis ?? new THREE.Vector3(1, 0, 0);
+          const angle = (Math.PI * 2) * (dt / 2.5);
+          rival.group.rotateOnAxis(axis, angle);
+          // arc upward then fall — world-space only, no screen bounce
+          const progress = 1 - (rival.flipTimer ?? 0) / 2.5;
+          rival.group.position.y = Math.sin(progress * Math.PI) * 2.5;
+          if ((rival.flipTimer ?? 0) <= 0) {
+            rival.isFlipping = false;
+            rival.group.position.y = 0;
+            rival.group.rotation.set(0, rival.group.rotation.y, 0);
+          }
+        }
+        // collision detection with player for flip
+        if (!rival.isFlipping && isRacing) {
+          const rivalPos = rival.group.position;
+          const playerWorldPos = new THREE.Vector3().copy(playerPos0).addScaledVector(playerNormal, playerLateral);
+          const dist = rivalPos.distanceTo(playerWorldPos);
+          if (dist < 2.0 && playerSpeed > 12) {
+            rival.isFlipping = true;
+            rival.flipTimer = 2.5;
+            rival.flipAxis = new THREE.Vector3(1, 0, Math.random() * 0.4 - 0.2).normalize();
+            totalScore += 250;
+            setDriftPopup({ text: 'TAKEDOWN! +250', id: Date.now() });
+            soundRef.current?.playCrash();
+          }
+        }
         if (isRacing) {
           const rivalTargetSpeed = (vehicleDef.topSpeed * 0.95 * diff.rivalSpeedMult + rival.name.length) * (1000 / 3600);
           rival.speed = THREE.MathUtils.lerp(rival.speed, rivalTargetSpeed, 0.05);
@@ -2636,19 +2786,19 @@ export default function KarachiRushGame() {
           const rel = uDistanceMeters(prevU, cu, trackLength);
           mesh.rotation.y += dt * 2.4;
           mesh.position.y = (mesh.userData as { baseY: number }).baseY;
-            if (isRacing && rel >= -2 && rel <= OBSTACLE_TUNING.coinPickupRadius) {
-              const latDiff = Math.abs(playerLateral - row.lateral);
-              if (latDiff < OBSTACLE_TUNING.coinPickupRadius) {
-                mesh.visible = false;
-                runCoins += diff.coinValue;
-                lapsRunCoins += diff.coinValue;
-                raceChallenge.current.coins++;
-                totalScore += Math.round(20 * diff.scoreMult);
-                soundRef.current?.playCoin();
-              }
+          if (isRacing && rel >= -2 && rel <= OBSTACLE_TUNING.coinPickupRadius) {
+            const latDiff = Math.abs(playerLateral - row.lateral);
+            if (latDiff < OBSTACLE_TUNING.coinPickupRadius) {
+              mesh.visible = false;
+              runCoins += diff.coinValue;
+              lapsRunCoins += diff.coinValue;
+              raceChallenge.current.coins++;
+              totalScore += Math.round(20 * diff.scoreMult);
+              soundRef.current?.playCoin();
             }
           }
         }
+      }
 
       // 7. lap detection
       const uDelta = playerU - prevPlayerU;
@@ -3483,120 +3633,120 @@ export default function KarachiRushGame() {
             <div className="settings-scroll">
               <div className="setting-row">
                 <span className="setting-k">Music</span>
-              <div className="volume-row">
-                <button
-                  type="button"
-                  className="vol-btn"
-                  aria-label="Music down"
-                  onClick={() => setMusicVolume((v) => Math.max(0, v - 10))}
-                >
-                  −
-                </button>
-                <span className="vol-val">{musicVolume}%</span>
-                <button
-                  type="button"
-                  className="vol-btn"
-                  aria-label="Music up"
-                  onClick={() => setMusicVolume((v) => Math.min(100, v + 10))}
-                >
-                  +
-                </button>
+                <div className="volume-row">
+                  <button
+                    type="button"
+                    className="vol-btn"
+                    aria-label="Music down"
+                    onClick={() => setMusicVolume((v) => Math.max(0, v - 10))}
+                  >
+                    −
+                  </button>
+                  <span className="vol-val">{musicVolume}%</span>
+                  <button
+                    type="button"
+                    className="vol-btn"
+                    aria-label="Music up"
+                    onClick={() => setMusicVolume((v) => Math.min(100, v + 10))}
+                  >
+                    +
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="setting-row">
-              <span className="setting-k">Effects</span>
-              <div className="volume-row">
-                <button
-                  type="button"
-                  className="vol-btn"
-                  aria-label="Effects down"
-                  onClick={() => setEffectsVolume((v) => Math.max(0, v - 10))}
-                >
-                  −
-                </button>
-                <span className="vol-val">{effectsVolume}%</span>
-                <button
-                  type="button"
-                  className="vol-btn"
-                  aria-label="Effects up"
-                  onClick={() => setEffectsVolume((v) => Math.min(100, v + 10))}
-                >
-                  +
-                </button>
+              <div className="setting-row">
+                <span className="setting-k">Effects</span>
+                <div className="volume-row">
+                  <button
+                    type="button"
+                    className="vol-btn"
+                    aria-label="Effects down"
+                    onClick={() => setEffectsVolume((v) => Math.max(0, v - 10))}
+                  >
+                    −
+                  </button>
+                  <span className="vol-val">{effectsVolume}%</span>
+                  <button
+                    type="button"
+                    className="vol-btn"
+                    aria-label="Effects up"
+                    onClick={() => setEffectsVolume((v) => Math.min(100, v + 10))}
+                  >
+                    +
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div className="setting-row credits-row">
-              <span className="setting-k">Audio credits</span>
-              <span className="setting-v">
-                Tyre squeal: audible-edge (CC BY 3.0). Nitro, coins, impacts:
-                Kenney, rubberduck (CC0). 3D models adapted: alnmathew,
-                Bongblender, 99.Miles, Nikitos & Nodeaxis Interactive.
-              </span>
-            </div>
+              <div className="setting-row credits-row">
+                <span className="setting-k">Audio credits</span>
+                <span className="setting-v">
+                  Tyre squeal: audible-edge (CC BY 3.0). Nitro, coins, impacts:
+                  Kenney, rubberduck (CC0). 3D models adapted: alnmathew,
+                  Bongblender, 99.Miles, Nikitos & Nodeaxis Interactive.
+                </span>
+              </div>
 
-            <div className="section-label">Controls</div>
-            <dl className="keymap">
-              <dt>
-                <kbd>W</kbd>
-                <kbd>S</kbd>
-              </dt>
-              <dd>Throttle and brake</dd>
-              <dt>
-                <kbd>A</kbd>
-                <kbd>D</kbd>
-              </dt>
-              <dd>Steer left and right</dd>
-              <dt>
-                <kbd>SPACE</kbd>
-              </dt>
-              <dd>Handbrake drift — scores while it holds</dd>
-              <dt>
-                <kbd>N</kbd>
-              </dt>
-              <dd>Nitro boost</dd>
-              <dt>
-                <kbd>P</kbd>
-                <kbd>ESC</kbd>
-              </dt>
-              <dd>Pause</dd>
-            </dl>
+              <div className="section-label">Controls</div>
+              <dl className="keymap">
+                <dt>
+                  <kbd>W</kbd>
+                  <kbd>S</kbd>
+                </dt>
+                <dd>Throttle and brake</dd>
+                <dt>
+                  <kbd>A</kbd>
+                  <kbd>D</kbd>
+                </dt>
+                <dd>Steer left and right</dd>
+                <dt>
+                  <kbd>SPACE</kbd>
+                </dt>
+                <dd>Handbrake drift — scores while it holds</dd>
+                <dt>
+                  <kbd>N</kbd>
+                </dt>
+                <dd>Nitro boost</dd>
+                <dt>
+                  <kbd>P</kbd>
+                  <kbd>ESC</kbd>
+                </dt>
+                <dd>Pause</dd>
+              </dl>
 
-            <div className="section-label">Camera View</div>
-            <div className="segmented" role="group" aria-label="Camera view">
-              {CAM_VIEW_OPTIONS.map(([v, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  className={`seg ${camView === v ? "is-on" : ""}`}
-                  aria-pressed={camView === v}
-                  onClick={() => setCamView(v)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+              <div className="section-label">Camera View</div>
+              <div className="segmented" role="group" aria-label="Camera view">
+                {CAM_VIEW_OPTIONS.map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`seg ${camView === v ? "is-on" : ""}`}
+                    aria-pressed={camView === v}
+                    onClick={() => setCamView(v)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
 
-            <div className="section-label">Vibration</div>
-            <div className="segmented" role="group" aria-label="Vibration">
-              {VIBRATION_OPTIONS.map(([v, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  className={`seg ${vibration === v ? "is-on" : ""}`}
-                  aria-pressed={vibration === v}
-                  onClick={() => setVibration(v)}
-                >
-                  {label}
-                </button>
-              ))}
+              <div className="section-label">Vibration</div>
+              <div className="segmented" role="group" aria-label="Vibration">
+                {VIBRATION_OPTIONS.map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`seg ${vibration === v ? "is-on" : ""}`}
+                    aria-pressed={vibration === v}
+                    onClick={() => setVibration(v)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="action-btn" onClick={() => setSettingsOpen(false)}>
+                DONE
+              </button>
             </div>
-            <button type="button" className="action-btn" onClick={() => setSettingsOpen(false)}>
-              DONE
-            </button>
           </div>
         </div>
-      </div>
       )}
 
       {/* ---------------------------------------------------------

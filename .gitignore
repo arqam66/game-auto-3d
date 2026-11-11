@@ -50,3 +50,8 @@ autorush_dump.html
 physics_extracted.js
 AGENTS.md
 **/AGENTS.md
+
+# vox (explainer pipeline)
+vox-projects/
+**/vox-explainer-skill/
+*.vox
