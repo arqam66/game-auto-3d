@@ -3271,6 +3271,14 @@ export default function KarachiRushGame() {
               >
                 <GearIcon size={18} />
               </button>
+              <button
+                type="button"
+                className="chip w-item"
+                style={{ marginLeft: 6, padding: "4px 10px", fontSize: "11px", fontWeight: 700, letterSpacing: "0.04em", cursor: "pointer", background: "var(--panel-2)", border: "1px solid var(--edge)", color: "var(--marigold)" }}
+                onClick={() => setMultiplayerOpen(true)}
+              >
+                {roomPin ? `PIN: ${roomPin}` : "FRIENDS"}
+              </button>
             </div>
 
             {/* Everything above and below this wrapper is pinned; only the
@@ -3742,6 +3750,94 @@ export default function KarachiRushGame() {
                 ))}
               </div>
               <button type="button" className="action-btn" onClick={() => setSettingsOpen(false)}>
+                DONE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------------
+          MULTIPLAYER PIN MODAL
+          --------------------------------------------------------- */}
+      {phase === "menu" && multiplayerOpen && (
+        <div className="screen-overlay screen-overlay--sheet" onClick={() => setMultiplayerOpen(false)}>
+          <div className="modal-panel panel-slim" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-head">
+              <h2 className="panel-title">PLAY WITH FRIENDS</h2>
+              <button
+                type="button"
+                className="panel-close"
+                aria-label="Close multiplayer"
+                onClick={() => setMultiplayerOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="settings-scroll" style={{ padding: "16px 20px" }}>
+              <div style={{ marginBottom: 16 }}>
+                <div className="section-label">Host a Game</div>
+                <p style={{ color: "var(--cream-dim)", fontSize: 13, margin: "6px 0 12px" }}>
+                  Generate a 4-digit PIN and share it with a friend in another window or tab to race together.
+                </p>
+                {isHost && roomPin ? (
+                  <div style={{ textAlign: "center", padding: "12px", background: "var(--panel-2)", border: "1px solid var(--marigold)", borderRadius: 6, marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, color: "var(--marigold)", fontWeight: 700 }}>YOUR ROOM PIN</div>
+                    <div style={{ fontSize: 32, fontWeight: 900, letterSpacing: "0.2em", color: "#fff", marginTop: 4 }}>
+                      {roomPin}
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="action-btn" style={{ width: "100%", marginBottom: 12 }} onClick={hostRoom}>
+                    CREATE ROOM PIN
+                  </button>
+                )}
+              </div>
+
+              <div style={{ borderTop: "1px solid var(--edge)", paddingTop: 16 }}>
+                <div className="section-label">Join with PIN</div>
+                <p style={{ color: "var(--cream-dim)", fontSize: 13, margin: "6px 0 12px" }}>
+                  Enter your friend&apos;s 4-digit PIN to connect.
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    placeholder="e.g. 5482"
+                    value={roomPin}
+                    onChange={(e) => setRoomPin(e.target.value.replace(/\D/g, ""))}
+                    style={{
+                      flex: 1,
+                      padding: "10px 14px",
+                      fontSize: 18,
+                      fontWeight: 700,
+                      letterSpacing: "0.15em",
+                      textAlign: "center",
+                      background: "var(--panel-2)",
+                      border: "1px solid var(--edge)",
+                      color: "#fff",
+                      borderRadius: 4,
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="action-btn"
+                    disabled={roomPin.length !== 4}
+                    onClick={() => joinRoom(roomPin)}
+                  >
+                    JOIN
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ width: "100%", marginTop: 20 }}
+                onClick={() => setMultiplayerOpen(false)}
+              >
                 DONE
               </button>
             </div>
