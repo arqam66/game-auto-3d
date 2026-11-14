@@ -1,197 +1,120 @@
-# 🛺 Karachi Rush: Rickshaw Circuit Championship
+# 🛺 Karachi Rickshaw Rush
 
-Complete 3D Auto-Rickshaw Racing Game — a Karachi-only spline circuit.
+A high-performance, in-browser 3D arcade racing game set on real Karachi road circuits, inspired by [AutoRush](https://autorush.autos/). Drive iconic Karachi street vehicles (Chingchi, CNG auto-rickshaw, Bolan van, Ravi pickup, Mehran hatchback) against 7 rivals through Saddar, Burns Road, Mazar-e-Quaid, Clifton, and Sea View.
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.4.5-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.3.0-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
-[![Three.js](https://img.shields.io/badge/Three.js-0.160.0-black?style=for-the-badge&logo=threedotjs)](https://threejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
-
-Play it at **<http://localhost:3000>** (after `npm run build && npm run start`, or `npm run dev`).
+**Tagline:** کراچی کی سڑکوں پر ریس، چلو! (*Karachi ki sadkon par race, Chalo!*)  
+**Engine:** Next.js 16 (App Router, Turbopack) · React 19 · Three.js (WebGL HD, ACES Filmic Tone Mapping) · Web Audio API · BroadcastChannel
 
 ---
 
-## 🏙️ Karachi Sprint Circuit — 3 District Laps
+## 📖 Complete Documentation
+The full 6-part project specification is documented in [KARACHI_RICKSHAW_RUSH_SPEC.md](../KARACHI_RICKSHAW_RUSH_SPEC.md):
+1. **PRD** (Product Requirements Document)
+2. **TRD** (Technical Requirements Document)
+3. **App Flow Document**
+4. **UI/UX Design Brief & Token System**
+5. **Backend & Database Schema**
+6. **Implementation Plan & Roadmap**
 
-One closed spline loop (~2.9 km) shared by player and 7 AI rivals. Each lap is a different Karachi district with its own landmarks and time-of-day:
+---
 
-| Lap | District | Time of Day | Landmarks |
+## 🌟 Core Features
+
+- **Single-Player Grand Prix:** Player + 7 Pakistani-named AI rivals with unique driving styles, spline pathfinding, collision physics, and rollover/flip takedowns.
+- **Race Customization:** 1, 3, or 5 laps; Easy, Normal, or Hard difficulty; Morning, Sunset, or Night times of day; Clear or Monsoon rain weather.
+- **8 Karachi Street Vehicles:** Authentic procedural 3D models with under-seat CNG tanks, safety passenger rails, fare meter boxes, bull bars, roof racks, and chamakpatti trims.
+- **CNG Nitro Boost & Drifting:** Collect roadside gas canisters or initiate handbrake drifts to charge nitro.
+- **Multiplayer PIN System:** Instant room creation with 4-digit PINs, room sharing, and peer-to-peer browser synchronization via `BroadcastChannel` (no account needed).
+- **Daily Progression:** Daily login streak bonuses, 3 daily procedural challenges, vehicle stat upgrades, and persistent bank economy.
+- **Clean UI & Responsive Controls:** Full keyboard (`WASD` / arrows, `Space` drift, `N` nitro, `H` horn), 4 camera views (Low, Normal, High, Roof), and touch controls.
+
+---
+
+## 🛺 Vehicle Garage & Attributes
+
+| # | Vehicle | Type / Inspiration | Top Speed | Accel | Handling | Nitro | Unlock Price |
+|---|---|---|---|---|---|---|---|
+| 1 | **Chingchi Classic** | Qingqi 4-stroke motor rickshaw | 42 km/h | 12.0 | 1.15 | +18 km/h | **Starter (Free)** |
+| 2 | **CNG Auto Green** | 3-wheel Karachi CNG auto | 45 km/h | 11.5 | 1.05 | +20 km/h | 1,000 coins |
+| 3 | **Truck Art Auto** | Peacock cyan & floral chamakpatti | 48 km/h | 13.0 | 1.12 | +25 km/h | 2,000 coins |
+| 4 | **Mehran Mast** | Lightweight Karachi street boss | 52 km/h | 14.5 | 1.10 | +22 km/h | 3,200 coins |
+| 5 | **Bolan Bhai** | Commercial Suzuki-style van | 47 km/h | 12.0 | 1.25 | +22 km/h | 4,500 coins |
+| 6 | **Ravi Raja** | Heavy-duty commercial pickup | 46 km/h | 13.5 | 1.20 | +20 km/h | 5,500 coins |
+| 7 | **Sea View Cruiser** | Smooth coastal highway cruiser | 50 km/h | 14.0 | 1.18 | +24 km/h | 7,000 coins |
+| 8 | **Golden Chingchi** | Supreme championship gold rickshaw | 54 km/h | 15.0 | 1.22 | +26 km/h | 10,000 coins |
+
+---
+
+## 🏙️ Circuit & District Laps
+
+The ~2.9 km closed spline circuit takes racers through 3 distinct districts:
+1. **Saddar Circuit (Day):** Empress Market, Chaar Minar, and heritage colonial streets.
+2. **II Chundrigar Road (Sunset):** Habib Bank Plaza, Boulton Market, and financial skyline.
+3. **Clifton & Sea View (Night):** Mazar-e-Quaid silhouette, coastal promenade, illuminated billboards, and active rickshaw headlights.
+
+---
+
+## 🏁 AI Rival Roster
+
+| Rival | Skill Mult | Lane Target | Livery Style |
 |---|---|---|---|
-| 1 | **SADAR** | ☀️ Day | Empress Market, Chaar Minar |
-| 2 | **II CHUNDRIGAR** | 🌅 Sunset | Habib Bank Plaza, Boulton Market |
-| 3 | **CLIFTON** | 🌃 Night | Mazar-e-Quaid, Sea View billboard (headlights on) |
-
-The menu exposes a 1 / 3 / 5 lap selector. Laps 4 and 5 replay the CLIFTON district (the track has 3 districts; the lookup clamps with `DISTRICTS[Math.min(lap - 1, 2)]`).
-
----
-
-## 🛺 Rickshaw Garage (Shop Economy)
-
-Coins collected on-track are deposited into your persistent bank (`localStorage`) after each race.
-
-| Vehicle | Price | Top Speed | Accel | Handling |
-|---|---|---|---|---|
-| **Baba Auto** | Free | 42 km/h | 11 | 1.00 |
-| **Karachi Queen** | 2,500 | 46 km/h | 12.5 | 1.10 |
-| **Hassan Special** | 4,500 | 48 km/h | 13 | 1.15 |
-| **Bhatta Express** | 10,000 | 50 km/h | 14 | 1.20 |
-
-Nitro adds the vehicle's `nitroBonus` (18–24 km/h) to top speed and a **×1.6 acceleration multiplier** while boosting. Nitro recharges by drifting (16%/s) or passively (4%/s above 15 km/h).
+| **Tariq** | 0.96 | -0.35 (Inside left) | Deep Navy & Cream |
+| **Zain** | 0.93 | +0.35 (Wide right) | Tangerine Orange & Midnight |
+| **Farhan** | 0.91 | -0.15 (Center left) | Crimson Red & Gold |
+| **Bilal** | 0.88 | +0.20 (Center right) | Persian Green & Charcoal |
+| **Usman** | 0.85 | -0.40 (Far left) | Royal Purple & Pearl White |
+| **Imran** | 0.82 | +0.40 (Far right) | Emerald Green & Leaf |
+| **Hassam** | 0.79 | 0.00 (Center line) | Warm Sand & Onyx |
 
 ---
 
-## 🏎️ 7 AI Rivals
+## 🕹️ Controls Guide
 
-Race against seven Pakistani-named drivers with distinct skill levels and lane targets:
-
-| Rival | Skill | Offset |
-|---|---|---|
-| **Tariq** | 0.96 | −0.35 |
-| **Zain** | 0.93 | +0.35 |
-| **Farhan** | 0.91 | −0.15 |
-| **Bilal** | 0.88 | +0.20 |
-| **Usman** | 0.85 | −0.40 |
-| **Imran** | 0.82 | +0.40 |
-| **Hassam** | 0.79 | 0.00 |
-
-Each rival has independent speed modulation, spline pathfinding, collision avoidance, and floating 3D nameplates.
+| Action | Desktop Key | Touch Button | Function |
+|---|---|---|---|
+| **Accelerate** | `W` or `↑` | **GO** | Throttle engine forward |
+| **Brake / Reverse** | `S` or `↓` | **BRAKE** | Decelerate or reverse |
+| **Steer Left / Right** | `A` / `D` or `←` / `→` | **◄ / ►** | Turn front wheel fork with natural roll |
+| **Handbrake Drift** | `Space` or `Shift` | **DRIFT** | Slide around corners, score points, charge Nitro |
+| **Nitro Boost** | `N` | **⚡** | Inject N₂O boost, widen camera FOV |
+| **Horn** | `H` | — | Karachi auto-rickshaw dual-tone horn |
+| **Camera View** | `C` | Menu Setting | Cycle Low, Normal, High, and Roof cameras |
+| **Pause Game** | `P` or `Esc` | Header Icon | Open in-race pause menu |
 
 ---
 
-## ⚠️ Trap Hazards — 6 Kinds
-
-| Hazard | Effect | Tuning |
-|---|---|---|
-| Tyre stack | Hard crash — speed ×0.25 | static collision 3.4 m |
-| Cone field | Hard crash — speed ×0.25 | static collision 3.4 m |
-| Moving rickshaw | Hard crash (weaves across lanes) | 3.0 m/s shoulder crawl |
-| Speed breaker zone | Speed ×0.82, nitro −8 | zone collision 4.2 m |
-| Oil slick zone | Grip loss — steering roll drifts | zone collision 4.2 m |
-| Manhole zone | Speed ×0.9, brief wobble | static collision 3.4 m |
-
-**Fairness guarantee:** obstacles are placed with a stratified distribution across the lap; the minimum gap between consecutive obstacles is **60 m** (`OBSTACLE_TUNING.minGapMeters`).
-
-### Difficulty table
-
-| Difficulty | Speed mult | Density mult | Base obstacles | Coins value | Score mult |
-|---|---|---|---|---|---|
-| Easy | 0.86 | 0.6 | 16 | ×2 | ×0.8 |
-| Medium | 1.00 | 1.0 | 26 | ×1 | ×1.0 |
-| Hard | 1.13 | 1.5 | 40 | ×1 | ×1.3 |
-
-Obstacle placement is seeded per difficulty (easy 1010 / medium 2020 / hard 3030) so runs are reproducible.
-
----
-
-## 🕹️ Controls
-
-| Input | Key / Action | In-Game Effect |
-|---|---|---|
-| `W` / `↑` | Accelerate / Gas | Throttle forward acceleration |
-| `S` / `↓` | Brake / Reverse | Slow down or reverse |
-| `A` / `←` | Steer Left | Turn front wheel with body roll |
-| `D` / `→` | Steer Right | Turn front wheel with body roll |
-| `Space` / `Shift` | Drift | Slide into turns, recharge Nitro |
-| `N` / `Ctrl` | Nitro Boost | Top-speed bonus + widened FOV |
-| Button | Day / Dusk / Night | Cycle time-of-day lighting + headlights |
-| `P` | Pause / Resume | Toggle the pause panel |
-| `H` | Horn | Auto-rickshaw honk |
-| `C` | Camera | Cycle chase / hood / cinematic views |
-| `R` | Back on Track | Reset to track center with speed penalty |
-
----
-
-## 📊 Post-Race Telemetry
-
-The results screen shows a champion ranking (all finishers by traveled distance), stat boxes, and a per-lap summary. Lifelog-style telemetry: **steps = distance (m) × 1.4**.
-
----
-
-## 🧪 Debug / Test API
-
-Exposed on `window.__rush` after boot:
-
-| Method | Purpose |
-|---|---|
-| `get()` | Full race state (phase, lap, playerU, lateral, speed, score, runCoins, bank, difficulty, obstacles, coinRows, distanceM, steps, trapsDodged, crashes, timeMode, trackLength) |
-| `start()` | Start race (uses active difficulty + vehicle) |
-| `setDifficulty(id)` | Set + persist easy/medium/hard |
-| `forceLap()` | Complete the current lap instantly (advances districts / finishes race) |
-| `addBank(n)` | Add coins to the persisted bank |
-| `unlockAll()` | Unlock every vehicle |
-| `warp(u, lateral?)` | Teleport the player to track fraction `u` with an optional lateral offset |
-| `listCoinRows()` | `{ u, lateral }` for every triple-coin row |
-| `listObstacles()` | `{ u, kind }` for every placed hazard |
-| `cycleTimeMode()` | Live time-of-day toggle (day → sunset → night) |
-| `quitRace()` | Abandon the current race and return to the menu |
-
-### localStorage keys
-
-| Key | Meaning |
-|---|---|
-| `rush_bank` | Coin balance |
-| `rush_unlocked` | JSON array of owned vehicle ids |
-| `rush_vehicle` | Selected vehicle |
-| `rush_bestLap` | Best single-lap time |
-| `rush_difficulty` | Persisted difficulty |
-| `rush_dailyLastRace` | Last race timestamp (streak) |
-| `rush_dailyStreak` | Consecutive-day race streak |
-| `rush_dailyChallengeDate` | Daily challenge generation date |
-| `rush_dailyChallenges` | Active daily challenge IDs |
-| `rush_upgradeLevels` | Per-vehicle per-stat upgrade levels |
-
----
-
-## 💅 Design System
-
-Flat "streets of Karachi" UI: warm aubergine ground, cream type, one marigold accent. Depth comes from panel-vs-ground contrast and a single hard shadow per screen. Two intentional menu scrims use `linear-gradient` (desktop and mobile sheets). Defined in `app/globals.css` (~1,496 lines of tokenized CSS, including the motion / `prefers-reduced-motion` section).
-
----
-
-## 🚀 Running the Game
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-
-# Or build and launch production server
-npm run build
-npm run start
-# or: npm run start:express  # node server.js
-```
-
-Visit [http://localhost:3000](http://localhost:3000).
-
----
-
-## 📁 Project Layout
+## 🛠️ Project Architecture
 
 ```
 karachi-rush/
 ├── app/
 │   ├── components/
-│   │   ├── KarachiRushGame.tsx   # Three.js engine, race loop, debug API
+│   │   ├── KarachiRushGame.tsx   # Three.js WebGL engine, game loop, HUD & PIN multiplayer
 │   │   └── game/
-│   │       ├── data.ts           # TRACK, DISTRICTS, VEHICLES, RIVALS, DIFFICULTIES, OBSTACLE_TUNING, STORAGE_KEYS
-│   │       └── icons.tsx         # HUD icon components
-│   ├── globals.css               # flat design system (~1,496 lines)
-│   ├── layout.tsx                # HTML5 metadata & viewport configuration
-│   ├── page.tsx                  # Root page entry
-│   ├── about/page.tsx
-│   ├── autos/page.tsx
-│   ├── changelog/page.tsx
-│   ├── contact/page.tsx
-│   ├── how-to-play/page.tsx
-│   ├── privacy/page.tsx
-│   ├── terms/page.tsx
-│   └── tracks/page.tsx
-├── public/                       # Static icons and assets
-├── package.json                  # next@16.4.5, react@19.3, three@0.160.0
-├── package-lock.json
-├── server.js                     # Express production server
-├── tsconfig.json                 # Strict TypeScript configuration
-└── next.config.ts                # Next.js build and Turbopack configuration
+│   │       ├── data.ts           # TRACK, DISTRICTS, VEHICLES (8), RIVALS, DIFFICULTIES
+│   │       └── icons.tsx         # Clean SVG HUD icons
+│   ├── globals.css               # Clean typography, tokenized CSS variables, no slop
+│   ├── layout.tsx                # Metadata & PWA viewport headers
+│   └── page.tsx                  # Client entry point
+├── public/                       # Audio and static icons
+└── package.json                  # Next.js 16, React 19, Three.js
 ```
+
+---
+
+## 🚀 Running the Game Locally
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Start development server with Turbopack
+npm run dev
+```
+
+Open **[http://localhost:3000](http://localhost:3000)** in any modern browser.
+
+---
+
+## ⚖️ Brand Safety & Disclaimer
+"Suzuki" is a registered trademark of Suzuki Motor Corporation. This project is a community-developed indie racing tribute using custom original models, stylized liveries, and fictional designations (*Chingchi Classic, Bolan Bhai, Ravi Raja, Mehran Mast*).
