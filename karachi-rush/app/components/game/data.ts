@@ -106,54 +106,106 @@ export const DISTRICTS: DistrictDef[] = [
 export const VEHICLES: VehicleDef[] = [
   {
     id: "baba",
-    name: "SUZUKI BOLAN CARRIER",
-    subtitle: "Classic Karachi green & yellow commercial auto",
-    bodyColor: "#1B7339", // Iconic Karachi commercial green
-    canopyColor: "#F5C518", // Yellow top canopy
-    frameColor: "#111827", // Dark steel frame
+    name: "CHINGCHI CLASSIC",
+    subtitle: "Light 4-stroke Qingqi motor rickshaw, ultra-nimble",
+    bodyColor: "#1B7339", // Authentic Pakistani commercial green
+    canopyColor: "#F5C518", // Golden yellow canopy
+    frameColor: "#111827",
     topSpeed: 42,
-    accel: 11,
-    handling: 1.0,
+    accel: 12,
+    handling: 1.15,
     nitroBonus: 18,
     price: 0,
   },
   {
     id: "queen",
-    name: "SADDAR TAXI EXPRESS",
-    subtitle: "Authentic Black & Yellow (Kaali Peeli) Karachi cab",
-    bodyColor: "#1A1A1A", // Glossy black body
-    canopyColor: "#FFC72C", // Chrome-yellow roof
-    frameColor: "#2E2E2E",
-    topSpeed: 46,
-    accel: 12.5,
-    handling: 1.1,
+    name: "CNG AUTO GREEN",
+    subtitle: "Karachi 3-wheel CNG auto with safety bars & meter",
+    bodyColor: "#0D6E38", // CNG Green
+    canopyColor: "#FFF3B0", // Off-white cream roof
+    frameColor: "#1A2E1C",
+    topSpeed: 45,
+    accel: 11.5,
+    handling: 1.05,
     nitroBonus: 20,
-    price: 2500,
+    price: 1000,
   },
   {
     id: "hassan",
-    name: "KHI TRUCK-ART SPECIAL",
-    subtitle: "Hand-painted peacock cyan & floral chamakpatti",
-    bodyColor: "#0099B8", // Vivid Truck Art turquoise/cyan
-    canopyColor: "#E63946", // Floral ruby red roof
+    name: "TRUCK ART AUTO",
+    subtitle: "Hand-painted peacock & chamakpatti floral artwork",
+    bodyColor: "#0099B8", // Peacock turquoise cyan
+    canopyColor: "#E63946", // Festive crimson red
     frameColor: "#053B48",
     topSpeed: 48,
     accel: 13,
-    handling: 1.15,
+    handling: 1.12,
+    nitroBonus: 25,
+    price: 2000,
+  },
+  {
+    id: "mehran",
+    name: "MEHRAN MAST",
+    subtitle: "Karachi street boss, lightning top speed & punch",
+    bodyColor: "#E2E8F0", // Silver-white metallic
+    canopyColor: "#1E293B", // Dark tinted top
+    frameColor: "#334155",
+    topSpeed: 52,
+    accel: 14.5,
+    handling: 1.1,
+    nitroBonus: 22,
+    price: 3200,
+  },
+  {
+    id: "bolan",
+    name: "BOLAN BHAI",
+    subtitle: "Heavy commercial 4-wheel van, stable drift king",
+    bodyColor: "#166534", // Deep Pakistan green
+    canopyColor: "#FACC15", // Bold yellow cab roof
+    frameColor: "#0F172A",
+    topSpeed: 47,
+    accel: 12,
+    handling: 1.25,
     nitroBonus: 22,
     price: 4500,
   },
   {
-    id: "bhatta",
-    name: "CLIFTON GOLD KING",
-    subtitle: "High-spec metallic bronze & deep emerald livery",
-    bodyColor: "#D49B24", // Royal mustard gold
-    canopyColor: "#0E3B24", // Forest green hood & roof
-    frameColor: "#241802",
+    id: "ravi",
+    name: "RAVI RAJA",
+    subtitle: "Tough utility pickup, unshakeable road grip",
+    bodyColor: "#2563EB", // Royal commercial blue
+    canopyColor: "#F8FAFC", // Clean white hood
+    frameColor: "#1E3A8A",
+    topSpeed: 46,
+    accel: 13.5,
+    handling: 1.2,
+    nitroBonus: 20,
+    price: 5500,
+  },
+  {
+    id: "seaview",
+    name: "SEA VIEW CRUISER",
+    subtitle: "Sleek coastal highway cruiser, smooth suspension",
+    bodyColor: "#0284C7", // Ocean sky blue
+    canopyColor: "#E0F2FE", // Soft coastal haze
+    frameColor: "#0369A1",
     topSpeed: 50,
     accel: 14,
-    handling: 1.2,
+    handling: 1.18,
     nitroBonus: 24,
+    price: 7000,
+  },
+  {
+    id: "bhatta",
+    name: "GOLDEN CHINGCHI",
+    subtitle: "Supreme championship rickshaw, pure gold luxury",
+    bodyColor: "#EAB308", // Pure metallic gold
+    canopyColor: "#713F12", // Deep bronze roof
+    frameColor: "#422006",
+    topSpeed: 54,
+    accel: 15,
+    handling: 1.22,
+    nitroBonus: 26,
     price: 10000,
   },
 ];

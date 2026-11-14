@@ -50,10 +50,14 @@ type ObstacleKind = "tyre" | "cone" | "rickshaw" | "breaker" | "oil" | "manhole"
 type CameraMode = "chase" | "hood" | "cinematic";
 
 const VEHICLE_TIERS: Record<string, string> = {
-  baba: "SUZUKI STANDARD",
-  queen: "KHI CAB",
+  baba: "CHINGCHI",
+  queen: "CNG AUTO",
   hassan: "TRUCK ART",
-  bhatta: "VIP DELUXE",
+  mehran: "STREET BOSS",
+  bolan: "SUZUKI VAN",
+  ravi: "PICKUP",
+  seaview: "COASTAL",
+  bhatta: "CHAMPION GOLD",
 };
 
 interface Obstacle {
@@ -1120,13 +1124,32 @@ export default function KarachiRushGame() {
       chassis.castShadow = true;
       group.add(chassis);
 
+      // CNG Cylinder Tanks (under rear bench - classic Karachi CNG auto trait)
+      const cngTankMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.6, roughness: 0.3 });
+      for (const sx of [-0.45, 0.45]) {
+        const cngTank = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1.8, 12), cngTankMat);
+        cngTank.rotation.z = Math.PI / 2;
+        cngTank.position.set(0, 0.78, sx - 0.7);
+        group.add(cngTank);
+      }
+
       // ── MAIN PASSENGER CABIN ────────────────────────────────────
       const body = new THREE.Mesh(new THREE.BoxGeometry(2.05, 1.15, 2.35), bodyMat);
       body.position.set(0, 1.42, -0.52);
       body.castShadow = true;
       group.add(body);
 
-      // Chamakpatti decorative side strip (Karachi truck art waistline)
+      // Open side safety mesh rails (Karachi rickshaw passenger protection)
+      for (const sx of [-1.05, 1.05]) {
+        for (const sy of [1.35, 1.55, 1.75]) {
+          const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.2, 6), chromeMat);
+          rail.rotation.x = Math.PI / 2;
+          rail.position.set(sx, sy, -0.5);
+          group.add(rail);
+        }
+      }
+
+      // Chamakpatti decorative side strip (Karachi truck art floral waistline)
       for (const sx of [-1.04, 1.04]) {
         const strip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 2.3), trimMat);
         strip.position.set(sx, 1.35, -0.52);
@@ -1151,6 +1174,20 @@ export default function KarachiRushGame() {
       const grille = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.22, 0.08), chromeMat);
       grille.position.set(0, 0.92, 2.45);
       group.add(grille);
+
+      // Karachi Meter Box (authentic green & red fare meter on dashboard)
+      const meterBox = new THREE.Mesh(
+        new THREE.BoxGeometry(0.32, 0.22, 0.15),
+        new THREE.MeshStandardMaterial({ color: 0x111827, metalness: 0.5, roughness: 0.5 })
+      );
+      meterBox.position.set(0.42, 1.35, 1.15);
+      group.add(meterBox);
+      const meterFlag = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, 0.12, 0.02),
+        new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xb91c1c, emissiveIntensity: 0.6 })
+      );
+      meterFlag.position.set(0.42, 1.48, 1.15);
+      group.add(meterFlag);
 
       // ── WINDSHIELD & CABIN PILLARS ──────────────────────────────
       const windshield = new THREE.Mesh(new THREE.PlaneGeometry(1.65, 0.92), glassMat);
@@ -3349,8 +3386,8 @@ export default function KarachiRushGame() {
                 1280x720 without shrinking the type. */}
             <div className="rail-body scrollable">
               <header className="brand">
-                <div className="game-title">KARACHI RUSH</div>
-                <div className="game-subtitle">SADAR · CHUNDRIGAR · CLIFTON</div>
+                <div className="game-title">KARACHI RICKSHAW RUSH</div>
+                <div className="game-subtitle">کراچی کی سڑکوں پر ریس، چلو! · SADDAR · BURNS ROAD · SEA VIEW</div>
               </header>
 
 
