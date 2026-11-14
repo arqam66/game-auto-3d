@@ -128,7 +128,7 @@ export const VEHICLES: VehicleDef[] = [
     accel: 11.5,
     handling: 1.05,
     nitroBonus: 20,
-    price: 1000,
+    price: 0,
   },
   {
     id: "hassan",
@@ -141,7 +141,7 @@ export const VEHICLES: VehicleDef[] = [
     accel: 13,
     handling: 1.12,
     nitroBonus: 25,
-    price: 2000,
+    price: 1500,
   },
   {
     id: "mehran",
@@ -154,7 +154,7 @@ export const VEHICLES: VehicleDef[] = [
     accel: 14.5,
     handling: 1.1,
     nitroBonus: 22,
-    price: 3200,
+    price: 2500,
   },
   {
     id: "bolan",
@@ -167,7 +167,7 @@ export const VEHICLES: VehicleDef[] = [
     accel: 12,
     handling: 1.25,
     nitroBonus: 22,
-    price: 4500,
+    price: 3500,
   },
   {
     id: "ravi",
@@ -180,7 +180,7 @@ export const VEHICLES: VehicleDef[] = [
     accel: 13.5,
     handling: 1.2,
     nitroBonus: 20,
-    price: 5500,
+    price: 4500,
   },
   {
     id: "seaview",
@@ -193,7 +193,7 @@ export const VEHICLES: VehicleDef[] = [
     accel: 14,
     handling: 1.18,
     nitroBonus: 24,
-    price: 7000,
+    price: 6000,
   },
   {
     id: "bhatta",

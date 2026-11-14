@@ -1,24 +1,29 @@
 @import "tailwindcss";
 
 /* =============================================================
-   KARACHI RUSH — flat signage system
-   Warm aubergine ground, cream type, one marigold accent.
-   No gradients, no backdrop blur, no glow. Depth comes from
+   KARACHI RICKSHAW RUSH — flat signage system
+   Karachi Truck Art meets Seaside Night. Bold, hand-painted,
+   joyful chaos — truck-art flowers, Urdu calligraphy, neon night
+   signs. No gradients, no backdrop blur, no glow. Depth comes from
    panel-vs-ground contrast and a single hard shadow per screen.
    ============================================================= */
 
 :root {
-  --ground: #120d18;
+  --night: #14102B;
   --panel: #1b1424;
   --panel-2: #241a30;
   --edge: #3a2e46;
 
-  --cream: #f7ecd9;
+  --cream: #FFF4DC;
   --cream-dim: #b9a992;
 
-  --marigold: #ffb020;
-  --sindoor: #e0392b;
-  --jade: #2bb673;
+  --truck-yellow: #FFC21A;
+  --truck-red: #E5322D;
+  --rickshaw-green: #1E8E3E;
+  --truck-pink: #FF4F9A;
+  --sea: #0E7C86;
+  --sand: #E8C98E;
+  --sky-sunset: #FF8A3D;
 
   --shadow: 6px 6px 0 #0a0710;
 
@@ -42,7 +47,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--ground);
+  background: var(--night);
   color: var(--cream);
   font-family: var(--body);
   font-size: 14px;
@@ -65,7 +70,7 @@ button {
 
 button:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--marigold);
+  outline: 2px solid var(--truck-yellow);
   outline-offset: 2px;
 }
 
@@ -107,7 +112,7 @@ button:focus-visible,
   z-index: 40;
   display: grid;
   place-items: center;
-  background: var(--ground);
+  background: var(--night);
   transition: opacity 420ms var(--ease), visibility 420ms;
 }
 
@@ -135,7 +140,7 @@ button:focus-visible,
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.16em;
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .loading-bar {
@@ -151,7 +156,7 @@ button:focus-visible,
   position: absolute;
   inset: 0 auto 0 0;
   width: 40%;
-  background: var(--marigold);
+  background: var(--truck-yellow);
   animation: loading-sweep 1200ms var(--ease) infinite;
 }
 
@@ -260,7 +265,7 @@ button:focus-visible,
   padding: 0 16px 0 14px;
   border-radius: 999px;
   background: var(--panel-2);
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .bank-value {
@@ -291,7 +296,7 @@ button:focus-visible,
 
 .rail-icon:hover {
   color: var(--cream);
-  border-color: var(--marigold);
+  border-color: var(--truck-yellow);
 }
 
 .brand {
@@ -312,7 +317,7 @@ button:focus-visible,
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.18em;
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .rail-group {
@@ -370,11 +375,11 @@ button:focus-visible,
 }
 
 .select-card:hover:not(.locked) {
-  border-color: var(--marigold);
+  border-color: var(--truck-yellow);
 }
 
 .select-card.active {
-  border: 2px solid var(--marigold);
+  border: 2px solid var(--truck-yellow);
   padding: 11px;
   background: var(--panel);
 }
@@ -417,14 +422,14 @@ button:focus-visible,
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .owned-tag {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.12em;
-  color: var(--jade);
+  color: var(--rickshaw-green);
 }
 
 /* ---- vehicle stat bars ---------------------------------------------- */
@@ -462,7 +467,7 @@ button:focus-visible,
 .select-card-stat-fill {
   display: block;
   height: 100%;
-  background: var(--marigold);
+  background: var(--truck-yellow);
   border-radius: 2px;
   transform-origin: left;
   transition: width 200ms var(--ease);
@@ -520,8 +525,8 @@ button:focus-visible,
 }
 
 .vol-btn:hover {
-  border-color: var(--marigold);
-  color: var(--marigold);
+  border-color: var(--truck-yellow);
+  color: var(--truck-yellow);
 }
 
 .vol-val {
@@ -560,8 +565,8 @@ button:focus-visible,
 }
 
 .seg.is-on {
-  background: var(--marigold);
-  color: var(--ground);
+  background: var(--truck-yellow);
+  color: var(--night);
 }
 
 .segmented--sm .seg {
@@ -586,10 +591,10 @@ button:focus-visible,
   width: 100%;
   min-height: 56px;
   padding: 0 20px;
-  border: 2px solid var(--ground);
+  border: 2px solid var(--night);
   border-radius: 8px;
-  background: var(--marigold);
-  color: var(--ground);
+  background: var(--truck-yellow);
+  color: var(--night);
   font-size: 20px;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -662,7 +667,7 @@ button:focus-visible,
 }
 
 .rail-links a {
-  color: var(--marigold);
+  color: var(--truck-yellow);
   text-decoration: none;
   font-weight: 500;
   transition: opacity 120ms var(--ease);
@@ -681,7 +686,7 @@ button:focus-visible,
 .diwali-banner {
   margin: 12px 16px;
   padding: 10px 14px;
-  background: linear-gradient(135deg, var(--marigold), var(--sindoor));
+  background: linear-gradient(135deg, var(--truck-yellow), var(--truck-red));
   border-radius: 10px;
   box-shadow: var(--shadow);
   text-align: center;
@@ -691,7 +696,7 @@ button:focus-visible,
   font-family: var(--display);
   font-size: 16px;
   font-weight: 800;
-  color: var(--ground);
+  color: var(--night);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -870,7 +875,7 @@ kbd {
   top: 10px;
   left: 10px;
   z-index: 40;
-  background: var(--sindoor);
+  background: var(--truck-red);
   color: var(--cream);
   font-size: 10px;
   font-weight: 700;
@@ -906,7 +911,7 @@ kbd {
 }
 
 .debug-row .debug-val {
-  color: var(--marigold);
+  color: var(--truck-yellow);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -939,7 +944,7 @@ kbd {
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.02em;
-  color: var(--marigold);
+  color: var(--truck-yellow);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1019,7 +1024,7 @@ kbd {
   font-size: 15px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 /* bottom left: speed */
@@ -1072,7 +1077,7 @@ kbd {
   border-radius: 999px;
   background: var(--panel);
   border: 1px solid var(--edge);
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .nitro-ring svg.nitro-arc {
@@ -1086,7 +1091,7 @@ kbd {
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .nitro-pct {
@@ -1127,9 +1132,9 @@ kbd {
 }
 
 .hud-btn--on {
-  color: var(--ground);
-  background: var(--marigold);
-  border-color: var(--marigold);
+  color: var(--night);
+  background: var(--truck-yellow);
+  border-color: var(--truck-yellow);
 }
 
 /* transient centre moments */
@@ -1141,8 +1146,8 @@ kbd {
   transform: translateX(-50%);
   padding: 8px 20px;
   border-radius: 8px;
-  background: var(--marigold);
-  color: var(--ground);
+  background: var(--truck-yellow);
+  color: var(--night);
   font-size: 20px;
   font-weight: 600;
   letter-spacing: 0.14em;
@@ -1176,8 +1181,8 @@ kbd {
   min-width: 320px;
   padding: 20px 32px;
   text-align: center;
-  border-top: 2px solid var(--marigold);
-  border-bottom: 2px solid var(--marigold);
+  border-top: 2px solid var(--truck-yellow);
+  border-bottom: 2px solid var(--truck-yellow);
   background: rgba(18, 13, 24, 0.92);
   animation: banner-in 2200ms var(--ease) both;
 }
@@ -1186,7 +1191,7 @@ kbd {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.2em;
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .lap-banner-district {
@@ -1231,7 +1236,7 @@ kbd {
   gap: 10px;
   padding: 10px 24px;
   border-radius: 8px;
-  background: var(--sindoor);
+  background: var(--truck-red);
   color: var(--cream);
   font-size: 24px;
   font-weight: 600;
@@ -1266,7 +1271,7 @@ kbd {
 }
 
 .countdown-number.is-go {
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 @keyframes countdown-punch {
@@ -1310,7 +1315,7 @@ kbd {
   font-family: var(--display);
   font-size: 32px;
   line-height: 1;
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .results-sub {
@@ -1364,7 +1369,7 @@ kbd {
 }
 
 .ranking-row.you .rank-n {
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .rank-name {
@@ -1421,7 +1426,7 @@ kbd {
   font-size: 40px;
   font-weight: 600;
   line-height: 1;
-  color: var(--marigold);
+  color: var(--truck-yellow);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1474,7 +1479,7 @@ kbd {
 }
 
 .stat-num.gold {
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .stat-label {
@@ -1551,18 +1556,18 @@ kbd {
 }
 
 .touch-btn:active {
-  background: var(--marigold);
-  color: var(--ground);
+  background: var(--truck-yellow);
+  color: var(--night);
 }
 
 .touch-btn.nitro {
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .touch-btn.go {
-  border-color: var(--marigold);
-  background: var(--marigold);
-  color: var(--ground);
+  border-color: var(--truck-yellow);
+  background: var(--truck-yellow);
+  color: var(--night);
 }
 
 .touch-controls {
@@ -1573,10 +1578,10 @@ kbd {
   pointer-events: auto;
 }
 
-.touch-brake { color: var(--sindoor); }
-.touch-gas   { color: var(--jade); }
+.touch-brake { color: var(--truck-red); }
+.touch-gas   { color: var(--rickshaw-green); }
 .touch-drift { color: var(--cream-dim); }
-.touch-nitro { color: var(--marigold); }
+.touch-nitro { color: var(--truck-yellow); }
 
 /* Car label: position + speed overlay (autorush style) */
 .car-label {
@@ -1600,7 +1605,7 @@ kbd {
   font-family: var(--display);
   font-size: 20px;
   font-weight: 800;
-  color: var(--marigold);
+  color: var(--truck-yellow);
   line-height: 1;
 }
 
@@ -1658,7 +1663,7 @@ kbd {
   font-size: 56px;
   font-weight: 900;
   letter-spacing: 0.04em;
-  color: var(--sindoor);
+  color: var(--truck-red);
   text-transform: uppercase;
   text-shadow: 2px 2px 0 #000;
   animation: cine-pop 120ms var(--ease) both;
@@ -1932,7 +1937,7 @@ kbd {
 }
 
 .chip.pts {
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .chip.streak {
@@ -1954,7 +1959,7 @@ kbd {
 
 .chip.set-btn:hover {
   color: var(--cream);
-  border-color: var(--marigold);
+  border-color: var(--truck-yellow);
   transform: translateY(-1px);
 }
 
@@ -1990,8 +1995,8 @@ kbd {
 }
 
 .home-picker .arrow:hover {
-  background: var(--marigold);
-  color: var(--ground);
+  background: var(--truck-yellow);
+  color: var(--night);
 }
 
 .home-picker .arrow:active {
@@ -2026,7 +2031,7 @@ kbd {
   font-size: 22px;
   line-height: 1;
   letter-spacing: 0.04em;
-  color: var(--marigold);
+  color: var(--truck-yellow);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2045,7 +2050,7 @@ kbd {
 }
 
 .tier-baba {
-  color: var(--jade);
+  color: var(--rickshaw-green);
   background: rgba(43, 182, 115, 0.15);
 }
 
@@ -2080,7 +2085,7 @@ kbd {
 }
 
 .tier-bhatta {
-  color: var(--marigold);
+  color: var(--truck-yellow);
   background: rgba(255, 176, 32, 0.2);
 }
 
@@ -2117,7 +2122,7 @@ kbd {
   display: block;
   height: 100%;
   border-radius: 4px;
-  background: var(--marigold);
+  background: var(--truck-yellow);
   transition: width 240ms var(--ease);
 }
 
@@ -2144,8 +2149,8 @@ kbd {
   gap: 4px;
   padding: 3px 8px;
   border-radius: 999px;
-  background: var(--marigold);
-  color: var(--ground);
+  background: var(--truck-yellow);
+  color: var(--night);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -2164,7 +2169,7 @@ kbd {
 .lock-note {
   font-size: 11px;
   font-weight: 600;
-  color: var(--sindoor);
+  color: var(--truck-red);
   letter-spacing: 0.04em;
 }
 
@@ -2194,8 +2199,8 @@ kbd {
 }
 
 .upg-btn:hover {
-  border-color: var(--marigold);
-  color: var(--marigold);
+  border-color: var(--truck-yellow);
+  color: var(--truck-yellow);
   background: var(--panel);
 }
 
@@ -2204,8 +2209,8 @@ kbd {
 }
 
 .upg-btn.maxed {
-  border-color: var(--jade);
-  color: var(--jade);
+  border-color: var(--rickshaw-green);
+  color: var(--rickshaw-green);
   background: rgba(43, 182, 115, 0.15);
 }
 
@@ -2221,13 +2226,13 @@ kbd {
 
 .upg-cost {
   font-size: 9px;
-  color: var(--marigold);
+  color: var(--truck-yellow);
   font-weight: 700;
 }
 
 /* Daily challenges chip */
 .chip.chal {
-  color: var(--marigold);
+  color: var(--truck-yellow);
   font-weight: 700;
 }
 
@@ -2248,7 +2253,7 @@ kbd {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--ground);
+  background: var(--night);
   z-index: 60;
   text-align: center;
   padding: 24px;
@@ -2316,14 +2321,14 @@ kbd {
 
 .chal-fill {
   height: 100%;
-  background: var(--marigold);
+  background: var(--truck-yellow);
   border-radius: 3px;
   width: 0%;
   transition: width 300ms var(--ease);
 }
 
 .chal-fill.done {
-  background: var(--jade);
+  background: var(--rickshaw-green);
 }
 
 .chal-reward {
@@ -2342,7 +2347,7 @@ kbd {
 
 .chal-reward-coin {
   font-size: 9px;
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 /* mini garage row */
@@ -2385,7 +2390,7 @@ kbd {
   gap: 3px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--marigold);
+  color: var(--truck-yellow);
 }
 
 .select-tag {

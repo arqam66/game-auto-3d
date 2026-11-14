@@ -324,7 +324,6 @@ export default function KarachiRushGame() {
   // ---- daily streak (last race date + streak count)
   const [dailyStreak, setDailyStreak] = useState<number>(0);
   const [dailyBonus, setDailyBonus] = useState<number>(0);
-  const [beatPulse, setBeatPulse] = useState<boolean>(false);
 
   // ---- daily challenges (autorush style) ----
   const [dailyChallenges, setDailyChallenges] = useState<ChallengeDef[]>([]);
@@ -364,7 +363,6 @@ export default function KarachiRushGame() {
 
   // ---- music theme ref (shared between audio effect and applyTimeMode)
   const musicThemeRef = useRef<MusicTheme>("day");
-  const musicBeatRef = useRef<boolean>(false);
 
   // ---- refs shared with the engine
   const controlsRef = useRef<Controls>({ throttle: 0, brake: 0, steer: 0, nitro: false, drift: false });
@@ -616,13 +614,9 @@ export default function KarachiRushGame() {
 
       let musicDuck = 1;
 
-      // --- music sequencer (theme-aware, beat-synced) ---
+      // --- music sequencer (theme-aware) ---
       let step = 0;
       let lastBeat = 0;
-      const onBeat = () => {
-        musicBeatRef.current = true;
-        setTimeout(() => { musicBeatRef.current = false; }, 60);
-      };
       const tick = () => {
         const ctx = audioCtx;
         if (!ctx) return;
@@ -633,7 +627,7 @@ export default function KarachiRushGame() {
         const beat = Math.floor(bar / beatLen);
         if (beat !== lastBeat) {
           lastBeat = beat;
-          onBeat();
+          // no beat pulse — screen stays steady
         }
         // bass changes every 4 beats
         const bassIdx = Math.floor(bar / (beatLen * 4)) % cfg.bassNotes.length;
@@ -898,11 +892,7 @@ export default function KarachiRushGame() {
     initAudio();
   }, []);
 
-  // beat-synced HUD pulse on music beat
-  useEffect(() => {
-    if (musicBeatRef.current) setBeatPulse(true);
-    setTimeout(() => setBeatPulse(false), 60);
-  }, [musicBeatRef.current]);
+  // no HUD pulse — screen stays steady
 
   // -------------------------------------------------------------
   // PERSISTED ECONOMY (coins bank, unlocks)
@@ -2545,10 +2535,9 @@ export default function KarachiRushGame() {
       if (isRacing && ctrl.nitro && playerNitro > 0) {
         playerNitro = Math.max(0, playerNitro - 26 * dt);
         soundRef.current?.playNitro(true);
-        // nitro flame pulse
-        const flame = Math.random() * 0.4 + 0.6;
-        nitroFlame.material.opacity = flame;
-        nitroFlame.scale.setScalar(0.8 + Math.random() * 0.5);
+        // nitro flame — steady, no pulse
+        nitroFlame.material.opacity = 1;
+        nitroFlame.scale.setScalar(1);
       } else {
         soundRef.current?.playNitro(false);
         nitroFlame.material.opacity = 0;
@@ -2598,9 +2587,7 @@ export default function KarachiRushGame() {
       broadcastState(playerPos);
       playerRickshaw.group.lookAt(new THREE.Vector3().copy(playerPos).add(playerTangent));
       if (crashTimer > 0) {
-        // keep a subtle shake without deforming the model
-        playerRickshaw.group.rotation.y += dt * 9;
-        // maintain original scale to avoid screen bounce
+        // maintain original scale — no screen bounce, no shake
         playerRickshaw.group.scale.set(1, 1, 1);
       } else {
         playerRickshaw.group.scale.set(1, 1, 1);
@@ -2767,9 +2754,8 @@ export default function KarachiRushGame() {
           const axis = rival.flipAxis ?? new THREE.Vector3(1, 0, 0);
           const angle = (Math.PI * 2) * (dt / 2.5);
           rival.group.rotateOnAxis(axis, angle);
-          // arc upward then fall — world-space only, no screen bounce
-          const progress = 1 - (rival.flipTimer ?? 0) / 2.5;
-          rival.group.position.y = Math.sin(progress * Math.PI) * 2.5;
+          // keep on ground — no screen bounce, no arc
+          rival.group.position.y = 0;
           if ((rival.flipTimer ?? 0) <= 0) {
             rival.isFlipping = false;
             rival.group.position.y = 0;
@@ -3064,8 +3050,8 @@ export default function KarachiRushGame() {
       {loadingVisible && (
         <div className={`loading-screen ${loading ? "" : "loading-screen--out"}`}>
           <div className="loading-mark">
-            <div className="loading-title">KARACHI RUSH</div>
-            <div className="loading-subtitle">SADAR · CHUNDRIGAR · CLIFTON</div>
+            <div className="loading-title">KARACHI RICKSHAW RUSH</div>
+            <div className="loading-subtitle">SADDAR · BURNS ROAD · SEA VIEW</div>
             <div className="loading-bar">
               <div className="loading-bar-fill" />
             </div>
@@ -3079,7 +3065,7 @@ export default function KarachiRushGame() {
           HUD — three corners, empty middle
           --------------------------------------------------------- */}
       {(phase === "racing" || phase === "countdown" || phase === "paused") && (
-        <div className="game-hud" style={{ transform: beatPulse ? "scale(1.03)" : "scale(1)", transition: "transform 60ms" }}>
+        <div className="game-hud">
           <div className="hud-panel hud-top-left">
             <div className="hud-pos">
               <span className="pos-main">{ordinal(hud.position)}</span>
@@ -3387,7 +3373,7 @@ export default function KarachiRushGame() {
             <div className="rail-body scrollable">
               <header className="brand">
                 <div className="game-title">KARACHI RICKSHAW RUSH</div>
-                <div className="game-subtitle">کراچی کی سڑکوں پر ریس، چلو! · SADDAR · BURNS ROAD · SEA VIEW</div>
+                <div className="game-subtitle">Karachi ki sadkon par race · SADDAR · BURNS ROAD · SEA VIEW</div>
               </header>
 
 

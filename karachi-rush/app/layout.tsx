@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Bungee, Noto_Naskh_Arabic, Teko } from "next/font/google";
+import { Bungee, Teko } from "next/font/google";
 import "./globals.css";
 
 // Wordmark + headings. Used once per screen so the condensed signage look
@@ -20,18 +20,10 @@ const teko = Teko({
   display: "swap",
 });
 
-// Just the one word on the start button.
-const notoNaskh = Noto_Naskh_Arabic({
-  subsets: ["arabic"],
-  weight: "400",
-  variable: "--font-urdu",
-  display: "swap",
-});
-
 export const metadata: Metadata = {
-  title: "Karachi Rush — Auto-Rickshaw Racing",
+  title: "Karachi Rickshaw Rush — Karachi Grand Prix",
   description:
-    "Race a Karachi auto-rickshaw through Saddar, II Chundrigar and Clifton. Drift physics, nitro, three circuits of night racing — all in 3D in your browser.",
+    "Free in-browser 3D arcade racer. Drive Karachi's street vehicles against 7 rivals through real Karachi roads — Saddar, Burns Road, Sea View. Drift physics, nitro, no download, no sign-up.",
   icons: [
     { rel: "icon", type: "image/svg+xml", url: "/favicon.svg" },
     { rel: "icon", type: "image/x-icon", url: "/favicon.ico" },
@@ -40,7 +32,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#120d18",
+  themeColor: "#14102B",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -54,7 +46,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${bungee.variable} ${teko.variable} ${notoNaskh.variable}`}
+      className={`${bungee.variable} ${teko.variable}`}
     >
       <body>{children}</body>
     </html>
