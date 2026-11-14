@@ -49,13 +49,13 @@ export interface DistrictDef {
 }
 
 // -------------------------------------------------------------
-// THE KARACHI MAP — one complete closed circuit, 3 districts
+// THE KARACHI MAP — one complete closed circuit, 6 tracks in 2 districts
 // -------------------------------------------------------------
 export const TRACK = {
   id: "karachi",
-  name: "Karachi Rush Circuit",
+  name: "Karachi Rickshaw Rush Circuit",
   city: "KARACHI",
-  tagline: "SADAR → II CHUNDRIGAR → CLIFTON",
+  tagline: "OLD KARACHI → CLIFTON AND SEA VIEW",
   roadWidth: 28,
   daySky: 0x7ec8e3,
   sunsetSky: 0xff7043,
@@ -63,13 +63,13 @@ export const TRACK = {
   ambientDay: 0xfff3e0,
   groundColor: 0x6f6046,
   points: [
-    { x: 0, y: 0, z: 0 }, // start/finish — Sadar gate
+    { x: 0, y: 0, z: 0 }, // start/finish — Saddar gate
     { x: 50, y: 2, z: 350 },
     { x: 200, y: 8, z: 600 }, // curve up past Empress Market block
-    { x: 450, y: 12, z: 700 }, // crest — II Chundrigar approach
-    { x: 680, y: 6, z: 550 }, // Habib Bank Plaza sweep
+    { x: 450, y: 12, z: 700 }, // crest — Burns Road approach
+    { x: 680, y: 6, z: 550 }, // Native Jetty sweep
     { x: 600, y: 0, z: 300 },
-    { x: 400, y: -4, z: 100 }, // dip — Boulton Market cut
+    { x: 400, y: -4, z: 100 }, // dip — M.A. Jinnah Road cut
     { x: 550, y: 5, z: -150 }, // Clifton climb
     { x: 350, y: 8, z: -350 },
     { x: 100, y: 0, z: -250 }, // Sea View bend back to start
@@ -79,23 +79,23 @@ export const TRACK = {
 export const DISTRICTS: DistrictDef[] = [
   {
     lap: 1,
-    name: "SADAR",
+    name: "OLD KARACHI",
     band: [0.0, 0.34],
-    tagline: "EMPRESS MARKET • CHAAR MINAR",
+    tagline: "EMPRESS MARKET • FRERE HALL • BURNS ROAD",
     timeOfDay: "day",
   },
   {
     lap: 2,
-    name: "II CHUNDRIGAR",
+    name: "OLD KARACHI",
     band: [0.34, 0.68],
-    tagline: "HABIB BANK PLAZA • BOULTON MARKET",
+    tagline: "NATIVE JETTY • M.A. JINNAH ROAD • MAZAR-E-QUAID",
     timeOfDay: "sunset",
   },
   {
     lap: 3,
-    name: "CLIFTON",
+    name: "CLIFTON AND SEA VIEW",
     band: [0.68, 1.0],
-    tagline: "MAZAR-E-QUAID • SEA VIEW",
+    tagline: "TEEN TALWAR • BOAT BASIN • SEA VIEW PROMENADE",
     timeOfDay: "night",
   },
 ];
@@ -107,9 +107,9 @@ export const VEHICLES: VehicleDef[] = [
   {
     id: "baba",
     name: "CHINGCHI CLASSIC",
-    subtitle: "Light 4-stroke Qingqi motor rickshaw, ultra-nimble",
-    bodyColor: "#1B7339", // Authentic Pakistani commercial green
-    canopyColor: "#F5C518", // Golden yellow canopy
+    subtitle: "Qingqi motor rickshaw, light quick turns",
+    bodyColor: "#1B7339",
+    canopyColor: "#F5C518",
     frameColor: "#111827",
     topSpeed: 42,
     accel: 12,
@@ -119,10 +119,10 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "queen",
-    name: "CNG AUTO GREEN",
-    subtitle: "Karachi 3-wheel CNG auto with safety bars & meter",
-    bodyColor: "#0D6E38", // CNG Green
-    canopyColor: "#FFF3B0", // Off-white cream roof
+    name: "CNG AUTO",
+    subtitle: "Green 3-wheel CNG rickshaw, balanced starter",
+    bodyColor: "#0D6E38",
+    canopyColor: "#FFF3B0",
     frameColor: "#1A2E1C",
     topSpeed: 45,
     accel: 11.5,
@@ -133,9 +133,9 @@ export const VEHICLES: VehicleDef[] = [
   {
     id: "hassan",
     name: "TRUCK ART AUTO",
-    subtitle: "Hand-painted peacock & chamakpatti floral artwork",
-    bodyColor: "#0099B8", // Peacock turquoise cyan
-    canopyColor: "#E63946", // Festive crimson red
+    subtitle: "Hand-painted decorated rickshaw, great boost",
+    bodyColor: "#0099B8",
+    canopyColor: "#E63946",
     frameColor: "#053B48",
     topSpeed: 48,
     accel: 13,
@@ -146,9 +146,9 @@ export const VEHICLES: VehicleDef[] = [
   {
     id: "mehran",
     name: "MEHRAN MAST",
-    subtitle: "Karachi street boss, lightning top speed & punch",
-    bodyColor: "#E2E8F0", // Silver-white metallic
-    canopyColor: "#1E293B", // Dark tinted top
+    subtitle: "Mehran-style hatchback, high top speed",
+    bodyColor: "#E2E8F0",
+    canopyColor: "#1E293B",
     frameColor: "#334155",
     topSpeed: 52,
     accel: 14.5,
@@ -159,9 +159,9 @@ export const VEHICLES: VehicleDef[] = [
   {
     id: "bolan",
     name: "BOLAN BHAI",
-    subtitle: "Heavy commercial 4-wheel van, stable drift king",
-    bodyColor: "#166534", // Deep Pakistan green
-    canopyColor: "#FACC15", // Bold yellow cab roof
+    subtitle: "Bolan-style van, heavy stable drifts",
+    bodyColor: "#166534",
+    canopyColor: "#FACC15",
     frameColor: "#0F172A",
     topSpeed: 47,
     accel: 12,
@@ -172,9 +172,9 @@ export const VEHICLES: VehicleDef[] = [
   {
     id: "ravi",
     name: "RAVI RAJA",
-    subtitle: "Tough utility pickup, unshakeable road grip",
-    bodyColor: "#2563EB", // Royal commercial blue
-    canopyColor: "#F8FAFC", // Clean white hood
+    subtitle: "Ravi-style pickup, tough hard to push",
+    bodyColor: "#2563EB",
+    canopyColor: "#F8FAFC",
     frameColor: "#1E3A8A",
     topSpeed: 46,
     accel: 13.5,
@@ -185,9 +185,9 @@ export const VEHICLES: VehicleDef[] = [
   {
     id: "seaview",
     name: "SEA VIEW CRUISER",
-    subtitle: "Sleek coastal highway cruiser, smooth suspension",
-    bodyColor: "#0284C7", // Ocean sky blue
-    canopyColor: "#E0F2FE", // Soft coastal haze
+    subtitle: "Cultus-style hatchback, fast and smooth",
+    bodyColor: "#0284C7",
+    canopyColor: "#E0F2FE",
     frameColor: "#0369A1",
     topSpeed: 50,
     accel: 14,
@@ -198,9 +198,9 @@ export const VEHICLES: VehicleDef[] = [
   {
     id: "bhatta",
     name: "GOLDEN CHINGCHI",
-    subtitle: "Supreme championship rickshaw, pure gold luxury",
-    bodyColor: "#EAB308", // Pure metallic gold
-    canopyColor: "#713F12", // Deep bronze roof
+    subtitle: "Gold-plated chingchi, best all round",
+    bodyColor: "#EAB308",
+    canopyColor: "#713F12",
     frameColor: "#422006",
     topSpeed: 54,
     accel: 15,

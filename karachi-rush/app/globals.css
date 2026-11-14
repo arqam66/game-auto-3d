@@ -157,16 +157,6 @@ button:focus-visible,
   inset: 0 auto 0 0;
   width: 40%;
   background: var(--truck-yellow);
-  animation: loading-sweep 1200ms var(--ease) infinite;
-}
-
-@keyframes loading-sweep {
-  0% {
-    transform: translateX(-110%);
-  }
-  100% {
-    transform: translateX(360%);
-  }
 }
 
 .loading-msg {
@@ -475,31 +465,6 @@ button:focus-visible,
 
 .locked .select-card-stat-fill {
   filter: opacity(0.5);
-}
-
-/* ---- weather toggle ------------------------------------------------- */
-.weather-drop {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-  overflow: hidden;
-}
-
-.weather-drop-line {
-  position: absolute;
-  top: -20px;
-  width: 1px;
-  height: 20px;
-  background: linear-gradient(to bottom, transparent, var(--cream));
-  opacity: 0.35;
-  animation: drop-fall linear infinite;
-}
-
-@keyframes drop-fall {
-  to {
-    transform: translateY(110vh);
-  }
 }
 
 /* ---- volume controls ------------------------------------------------ */
@@ -870,24 +835,6 @@ kbd {
   pointer-events: auto;
 }
 
-.beta-badge {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 40;
-  background: var(--truck-red);
-  color: var(--cream);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 2px solid var(--cream);
-  pointer-events: none;
-  box-shadow: var(--shadow);
-}
-
 .debug-tele {
   position: absolute;
   top: 40px;
@@ -1158,13 +1105,13 @@ kbd {
 @keyframes drift-pop {
   0% {
     opacity: 0;
-    transform: translate(-50%, 8px) scale(0.94);
+    transform: translate(-50%, 8px);
   }
-  18% {
+  20% {
     opacity: 1;
-    transform: translate(-50%, 0) scale(1);
+    transform: translate(-50%, 0);
   }
-  70% {
+  80% {
     opacity: 1;
   }
   100% {
@@ -1215,7 +1162,7 @@ kbd {
     opacity: 0;
     transform: translate(-50%, 10px);
   }
-  10%,
+  20%,
   72% {
     opacity: 1;
     transform: translate(-50%, 0);
@@ -1277,18 +1224,18 @@ kbd {
 @keyframes countdown-punch {
   0% {
     opacity: 0;
-    transform: scale(1.4);
+    transform: translateY(20px);
   }
   22% {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0);
   }
   82% {
     opacity: 1;
   }
   100% {
     opacity: 0;
-    transform: scale(0.94);
+    transform: translateY(-20px);
   }
 }
 
@@ -1670,9 +1617,9 @@ kbd {
 }
 
 @keyframes cine-pop {
-  0% { transform: scale(0.6); opacity: 0; }
-  60% { transform: scale(1.15); }
-  100% { transform: scale(1); opacity: 1; }
+  0% { opacity: 0; transform: translateY(20px); }
+  60% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 /* =============================================================
