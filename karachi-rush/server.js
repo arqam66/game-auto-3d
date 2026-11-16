@@ -1,5 +1,8 @@
 // server.js — Express custom server for Karachi Rush (Next.js)
+// CommonJS is intentional here (Next.js custom server requirement).
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require("express");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const next = require("next");
 
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;

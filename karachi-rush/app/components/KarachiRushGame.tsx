@@ -128,10 +128,13 @@ const MUSIC_THEMES: Record<MusicTheme, {
   bassNotes: number[];
   leadNotes: number[];
   arpNotes: number[];
+  chords: number[][];
   beatLen: number;
   bassGain: number;
   leadGain: number;
   arpGain: number;
+  hatGain: number;
+  snareGain: number;
 }> = {
   day: {
     bassType: "sine",
@@ -140,10 +143,18 @@ const MUSIC_THEMES: Record<MusicTheme, {
     bassNotes: [55, 41.2, 36.7, 49],
     leadNotes: [110, 130.8, 146.8, 164.8],
     arpNotes: [220, 246.9, 277.2, 311.1, 277.2, 246.9],
+    chords: [
+      [164.8, 220, 261.6],
+      [130.8, 196, 246.9],
+      [98, 147, 196],
+      [164.8, 246.9, 329.6],
+    ],
     beatLen: 0.25,
     bassGain: 0.24,
     leadGain: 0.14,
     arpGain: 0.10,
+    hatGain: 0.05,
+    snareGain: 0.08,
   },
   sunset: {
     bassType: "sawtooth",
@@ -152,10 +163,18 @@ const MUSIC_THEMES: Record<MusicTheme, {
     bassNotes: [41.2, 36.7, 32.7, 38.9],
     leadNotes: [82.4, 98.0, 110.0, 123.5],
     arpNotes: [164.8, 185.0, 207.7, 233.1, 207.7, 185.0],
+    chords: [
+      [155.6, 196, 261.6],
+      [146.8, 220, 329.6],
+      [116.5, 174.6, 233.1],
+      [155.6, 246.9, 311.1],
+    ],
     beatLen: 0.30,
     bassGain: 0.24,
     leadGain: 0.12,
     arpGain: 0.08,
+    hatGain: 0.045,
+    snareGain: 0.07,
   },
   night: {
     bassType: "square",
@@ -164,10 +183,18 @@ const MUSIC_THEMES: Record<MusicTheme, {
     bassNotes: [36.7, 32.7, 27.5, 34.6],
     leadNotes: [65.4, 77.8, 87.3, 98.0],
     arpNotes: [130.8, 146.8, 164.8, 185.0, 164.8, 146.8],
+    chords: [
+      [110, 164.8, 220],
+      [103.8, 155.6, 196],
+      [98, 147, 196],
+      [110, 220, 311.1],
+    ],
     beatLen: 0.35,
     bassGain: 0.20,
     leadGain: 0.10,
     arpGain: 0.06,
+    hatGain: 0.04,
+    snareGain: 0.06,
   },
 };
 
@@ -415,6 +442,7 @@ export default function KarachiRushGame() {
     setMuted: (muted: boolean) => void;
     setMusicVolume: (v: number) => void;
     setEffectsVolume: (v: number) => void;
+    bgMusic: HTMLAudioElement | null;
   } | null>(null);
 
   // -------------------------------------------------------------
@@ -462,7 +490,7 @@ export default function KarachiRushGame() {
       document.removeEventListener("mousedown", onGesture);
       document.removeEventListener("touchstart", onGesture);
     };
-  }, [audioUnlocked, soundRef.current]);
+  }, [audioUnlocked, soundRef]);
 
   useEffect(() => {
     let audioCtx: AudioContext | null = null;
@@ -483,45 +511,19 @@ export default function KarachiRushGame() {
     let nitroGain: GainNode | null = null;
 
     // Background music voices
-    let musicBass: OscillatorNode | null = null;
-    let musicBassGain: GainNode | null = null;
-    let musicLead: OscillatorNode | null = null;
-    let musicLeadGain: GainNode | null = null;
-    let musicArp: OscillatorNode | null = null;
-    let musicArpGain: GainNode | null = null;
+    const musicBass: OscillatorNode | null = null;
+    const musicBassGain: GainNode | null = null;
+    const musicLead: OscillatorNode | null = null;
+    const musicLeadGain: GainNode | null = null;
+    const musicArp: OscillatorNode | null = null;
+    const musicArpGain: GainNode | null = null;
+    const musicChord: OscillatorNode | null = null;
+    const musicChordGain: GainNode | null = null;
+    let musicHatGain: GainNode | null = null;
+    let musicSnareGain: GainNode | null = null;
     let musicStartTime = 0;
-
-    // Music theme state — shared with the rendering effect via musicThemeRef
-    function buildMusicVoices(theme: MusicTheme) {
-      if (!audioCtx || !musicGain) return;
-      const cfg = MUSIC_THEMES[theme];
-      musicBass = audioCtx.createOscillator();
-      musicBass.type = cfg.bassType;
-      musicBass.frequency.setValueAtTime(cfg.bassNotes[0], audioCtx.currentTime);
-      musicBassGain = audioCtx.createGain();
-      musicBassGain.gain.setValueAtTime(cfg.bassGain, audioCtx.currentTime);
-      musicBass.connect(musicBassGain);
-      musicBassGain.connect(musicGain);
-      musicBass.start();
-
-      musicLead = audioCtx.createOscillator();
-      musicLead.type = cfg.leadType;
-      musicLead.frequency.setValueAtTime(cfg.leadNotes[0], audioCtx.currentTime);
-      musicLeadGain = audioCtx.createGain();
-      musicLeadGain.gain.setValueAtTime(cfg.leadGain, audioCtx.currentTime);
-      musicLead.connect(musicLeadGain);
-      musicLeadGain.connect(musicGain);
-      musicLead.start();
-
-      musicArp = audioCtx.createOscillator();
-      musicArp.type = cfg.arpType;
-      musicArp.frequency.setValueAtTime(cfg.arpNotes[0], audioCtx.currentTime);
-      musicArpGain = audioCtx.createGain();
-      musicArpGain.gain.setValueAtTime(cfg.arpGain, audioCtx.currentTime);
-      musicArp.connect(musicArpGain);
-      musicArpGain.connect(musicGain);
-      musicArp.start();
-    }
+    let musicLevel = 0.8;
+    let bgMusic: HTMLAudioElement | null = null;
 
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 
@@ -607,60 +609,28 @@ export default function KarachiRushGame() {
       hornGain.connect(sfxGain);
       hornOsc.start();
 
-      // --- background music (procedural, loops) — theme-aware (day/sunset/night) ---
+      // --- percussion buses (hats / snare ride on the music bus) ---
+      musicHatGain = audioCtx.createGain();
+      musicHatGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      musicHatGain.connect(musicGain);
+      musicSnareGain = audioCtx.createGain();
+      musicSnareGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      musicSnareGain.connect(musicGain);
+
+      // --- background music (real looped track — Pixabay royalty-free CC) ---
       musicStartTime = audioCtx.currentTime;
 
-      buildMusicVoices("day");
-
+      // Real looped music track now drives the soundtrack (replaces the synth sequencer).
       let musicDuck = 1;
 
-      // --- music sequencer (theme-aware) ---
-      let step = 0;
-      let lastBeat = 0;
-      const tick = () => {
-        const ctx = audioCtx;
-        if (!ctx) return;
-        const t = ctx.currentTime;
-        const cfg = MUSIC_THEMES[musicThemeRef.current];
-        const bar = t - musicStartTime;
-        const beatLen = cfg.beatLen;
-        const beat = Math.floor(bar / beatLen);
-        if (beat !== lastBeat) {
-          lastBeat = beat;
-          // no beat pulse — screen stays steady
-        }
-        // bass changes every 4 beats
-        const bassIdx = Math.floor(bar / (beatLen * 4)) % cfg.bassNotes.length;
-        if (step % 4 === 0 && musicBassGain) {
-          musicBassGain.gain.setValueAtTime(cfg.bassGain * musicDuck, t);
-          musicBassGain.gain.exponentialRampToValueAtTime(0.03 * musicDuck, t + beatLen * 3.9);
-          musicBass!.frequency.setValueAtTime(cfg.bassNotes[bassIdx], t);
-        }
-
-        // lead plays on beats 1 and 3
-        if (step % 8 === 0 || step % 8 === 4) {
-          const leadIdx = Math.floor(step / 8) % cfg.leadNotes.length;
-          if (musicLeadGain) {
-            musicLeadGain.gain.setValueAtTime(cfg.leadGain * musicDuck, t);
-            musicLeadGain.gain.exponentialRampToValueAtTime(0.001 * musicDuck, t + 0.2);
-            musicLead!.frequency.setValueAtTime(cfg.leadNotes[leadIdx], t);
-          }
-        }
-
-        // arp on every 16th
-        if (musicArpGain) {
-          const arpIdx = step % cfg.arpNotes.length;
-          musicArpGain.gain.setValueAtTime(cfg.arpGain * musicDuck, t);
-          musicArpGain.gain.exponentialRampToValueAtTime(0.001 * musicDuck, t + beatLen * 0.9);
-          musicArp!.frequency.setValueAtTime(cfg.arpNotes[arpIdx], t);
-        }
-
-        step = (step + 1) % 32;
-        setTimeout(tick, beatLen * 1000 * 0.985);
-      };
-      tick();
+      const bg = new Audio("/music/racing.mp3");
+      bg.loop = true;
+      bg.volume = soundEnabledRef.current ? musicLevel : 0;
+      bg.play().catch(() => { /* autoplay may require a user gesture */ });
+      bgMusic = bg;
 
       soundRef.current = {
+        bgMusic,
         init: initAudio,
         updateEngine: (speed: number, throttle: boolean, nitro: boolean) => {
           if (!audioCtx || !engineBass || !engineBassGain || !engineLead || !engineLeadGain || !engineFilter) return;
@@ -856,15 +826,18 @@ export default function KarachiRushGame() {
           const ac = audioCtx;
           musicDuck = target;
           mg.gain.setValueAtTime(target, ac.currentTime);
+          if (bgMusic) bgMusic.volume = bgMusic.volume * target;
           setTimeout(() => {
             musicDuck = 1;
             mg.gain.setValueAtTime(1, ac.currentTime);
+            if (bgMusic) bgMusic.volume = musicLevel;
           }, len);
         },
         setMuted: (muted: boolean) => {
           if (masterGain && audioCtx) {
             masterGain.gain.setTargetAtTime(muted ? 0 : 0.7, audioCtx.currentTime, 0.05);
           }
+          if (bgMusic) bgMusic.volume = muted ? 0 : musicLevel;
           if (musicGain && audioCtx) {
             musicGain.gain.setTargetAtTime(muted ? 0 : 0.5, audioCtx.currentTime, 0.05);
           }
@@ -873,6 +846,8 @@ export default function KarachiRushGame() {
           }
         },
         setMusicVolume: (v: number) => {
+          musicLevel = v / 100;
+          if (bgMusic) bgMusic.volume = v / 100;
           if (musicGain && audioCtx) {
             musicGain.gain.setTargetAtTime(v / 100, audioCtx.currentTime, 0.05);
           }
@@ -884,6 +859,10 @@ export default function KarachiRushGame() {
         },
       };
       return () => {
+        if (bgMusic) {
+          try { bgMusic.pause(); } catch { /* noop */ }
+          bgMusic = null;
+        }
         if (audioCtx && audioCtx.state !== "closed") audioCtx.close().catch(() => { });
         soundRef.current = null;
         audioCtx = null;
@@ -925,6 +904,8 @@ export default function KarachiRushGame() {
   const [bank, setBank] = useState(0);
   const [unlocked, setUnlocked] = useState<string[]>(["baba"]);
 
+  // Mount-time localStorage hydration: seed state from storage once on mount.
+  /* eslint-disable react-hooks/set-state-in-effect -- mount-time storage hydration */
   useEffect(() => {
     setBank(readBank());
     setUnlocked(readUnlocked());
@@ -969,16 +950,18 @@ export default function KarachiRushGame() {
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const buyVehicle = useCallback((id: string) => {
     const v = vehicleById(id);
     if (!v || v.price <= 0) return;
     const curBank = readBank();
-    if (curBank >= v.price && !readUnlocked().includes(id)) {
+    const alreadyUnlocked = readUnlocked();
+    if (curBank >= v.price && !alreadyUnlocked.includes(id)) {
       writeBank(curBank - v.price);
-      writeUnlocked([...readUnlocked(), id]);
+      writeUnlocked([...alreadyUnlocked, id]);
       setBank(curBank - v.price);
-      setUnlocked([...readUnlocked(), id]);
+      setUnlocked([...alreadyUnlocked, id]);
       soundRef.current?.playCoin();
     }
   }, [readBank, writeBank, readUnlocked, writeUnlocked]);
@@ -986,8 +969,7 @@ export default function KarachiRushGame() {
   const buyUpgrade = useCallback((statId: string) => {
     const v = vehicleById(selectedVehicle);
     if (!v || v.price > 0 && !readUnlocked().includes(v.id)) return;
-    const levels = upgradeLevels[selectedVehicle] ?? {};
-    const curLevel = levels[statId] ?? 0;
+    const curLevel = (upgradeLevels[selectedVehicle] ?? {})[statId] ?? 0;
     if (curLevel >= MAX_UPGRADE_LEVEL) return;
     const cost = upgradeCost(statId, curLevel);
     if (cost <= 0) return;
@@ -995,18 +977,67 @@ export default function KarachiRushGame() {
     if (curBank < cost) return;
     writeBank(curBank - cost);
     setBank(curBank - cost);
-    setUpgradeLevels((prev) => ({
-      ...prev,
-      [selectedVehicle]: { ...(prev[selectedVehicle] ?? {}), [statId]: curLevel + 1 },
-    }));
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.upgradeLevels, JSON.stringify({
-        ...upgradeLevels,
-        [selectedVehicle]: { ...(upgradeLevels[selectedVehicle] ?? {}), [statId]: curLevel + 1 },
-      }));
-    } catch { /* ignore */ }
+    setUpgradeLevels((prev) => {
+      const next = {
+        ...prev,
+        [selectedVehicle]: { ...(prev[selectedVehicle] ?? {}), [statId]: curLevel + 1 },
+      };
+      try {
+        window.localStorage.setItem(STORAGE_KEYS.upgradeLevels, JSON.stringify(next));
+      } catch { /* ignore */ }
+      return next;
+    });
     soundRef.current?.playCoin();
   }, [selectedVehicle, upgradeLevels, readBank, writeBank]);
+
+  // Lobby entrance choreography via anime.js — title, subtitle, START CTA.
+  // Runs once the menu is visible (phase === "menu" && !loading). Tweens are
+  // cleared on cleanup so a quick restart never stacks stale animations.
+  useEffect(() => {
+    if (phase !== "menu" || loading) return;
+    const w = window as unknown as { anime?: unknown };
+    const a = w.anime;
+    if (typeof a !== "function") return;
+    const call = a as unknown as (params: Record<string, unknown>) => { clear?: () => void };
+    const tween = (params: Record<string, unknown>): { clear?: () => void } | null => {
+      const t = call(params) as { clear?: () => void } | null;
+      return t && typeof t.clear === "function" ? t : null;
+    };
+    try {
+      const title = tween({
+        targets: ".game-title",
+        from: { opacity: 0, translateY: 24 },
+        to: { opacity: 1, translateY: 0 },
+        duration: 800,
+        easing: "easeOutExpo",
+      });
+      const subtitle = tween({
+        targets: ".game-subtitle",
+        from: { opacity: 0, translateY: 16 },
+        to: { opacity: 1, translateY: 0 },
+        duration: 700,
+        delay: 180,
+        easing: "easeOutExpo",
+      });
+      const startCta = tween({
+        targets: "#startBtn",
+        from: { opacity: 0, translateY: 14 },
+        to: { opacity: 1, translateY: 0 },
+        duration: 650,
+        delay: 320,
+        easing: "easeOutExpo",
+      });
+      const cleanups = [title, subtitle, startCta].filter(
+        (t): t is { clear?: () => void } => t !== null
+      ) as Array<{ clear?: () => void }>;
+      return () => {
+        for (const t of cleanups) t.clear?.();
+      };
+    } catch {
+      // anime.js not ready — menu renders statically, no crash
+      return;
+    }
+  }, [phase, loading]);
 
   // =============================================================
   // THREE.JS 3D RACE ENGINE (built once per run)
@@ -1530,6 +1561,41 @@ export default function KarachiRushGame() {
       return g;
     }
 
+    function buildStartGantry(): THREE.Group {
+      const g = new THREE.Group();
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x2c2438, metalness: 0.75, roughness: 0.35 });
+      const armMat = new THREE.MeshStandardMaterial({ color: 0xe8c98e, metalness: 0.65, roughness: 0.4 });
+      for (const sx of [-8, 8]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 14, 8), postMat);
+        post.position.set(sx, 7, 0);
+        post.castShadow = true;
+        g.add(post);
+      }
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(16, 1.6, 1.2), armMat);
+      arm.position.set(0, 14, 0);
+      arm.castShadow = true;
+      g.add(arm);
+      const sign = new THREE.Mesh(
+        new THREE.BoxGeometry(9, 2.2, 0.6),
+        new THREE.MeshStandardMaterial({ color: 0xe5322d, roughness: 0.5, metalness: 0.3 })
+      );
+      sign.position.set(0, 13.2, -0.7);
+      g.add(sign);
+      const banner = new THREE.Mesh(
+        new THREE.BoxGeometry(12, 0.5, 0.4),
+        new THREE.MeshBasicMaterial({ color: 0x14102b })
+      );
+      banner.position.set(0, 13.9, -0.55);
+      g.add(banner);
+      const flag = new THREE.Mesh(
+        new THREE.BoxGeometry(0.25, 2, 0.25),
+        new THREE.MeshBasicMaterial({ color: 0xffc21a })
+      );
+      flag.position.set(-6, 14.9, -0.85);
+      g.add(flag);
+      return g;
+    }
+
     // ---------------------------------------------------------
     // SCENE INITIALIZATION
     // ---------------------------------------------------------
@@ -1791,6 +1857,8 @@ export default function KarachiRushGame() {
       placeAt(0.90, -1, 38, () => buildSerenaTower());
       // Billboard at the final bend
       placeAt(0.97, 1, 30, () => buildBillboard("SEA VIEW • CLIFTON"));
+      // Start / finish gantry (racing series look)
+      placeAt(0.005, 1, 30, () => buildStartGantry());
 
       // generic city fill
       const rng = mulberry32(7021);
@@ -2673,7 +2741,14 @@ export default function KarachiRushGame() {
           .addScaledVector(playerTangent, -viewBack)
           .add(new THREE.Vector3(0, viewHeight + (portraitBoost - 1) * 3.4, 0));
         camera.position.lerp(targetCamPos, 0.12);
-        camera.lookAt(new THREE.Vector3(playerPos.x, playerPos.y + 2.0, playerPos.z));
+        // racing-style look-ahead: bias the camera toward where we're going,
+        // strongest at speed so the chase read feels like a real circuit racer
+        const lookAhead = new THREE.Vector3(
+          playerPos.x + playerTangent.x * (11 + playerSpeed * 0.11),
+          playerPos.y + 2.0,
+          playerPos.z + playerTangent.z * (11 + playerSpeed * 0.11)
+        );
+        camera.lookAt(lookAhead);
       }
       // The dome is huge but finite; re-centre it so it can never be escaped.
       skyDome?.position.copy(camera.position);
@@ -2987,10 +3062,12 @@ export default function KarachiRushGame() {
   // The race deposits coins straight into localStorage, so the wallet pill has
   // to re-read the bank when the run ends or the player returns to the menu.
   // Guarded so it only writes state when the value actually changed.
+  /* eslint-disable react-hooks/set-state-in-effect -- resync bank from storage after race/return to menu */
   useEffect(() => {
     const nextBank = readBank();
     if (nextBank !== bank) setBank(nextBank);
   }, [phase, readBank, bank]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Districts roll day -> sunset -> night as laps advance, so a finished race
   // leaves the scene on the last district's phase. Restore the menu's TIME
@@ -3014,39 +3091,8 @@ export default function KarachiRushGame() {
 
   return (
     <div id="game-container">
-      <div className="debug-tele">
-        <div className="debug-row">
-          <span className="debug-label">FPS</span>
-          <span className="debug-val" id="debugFps">{fpsRef.current}</span>
-        </div>
-        <div className="debug-row">
-          <span className="debug-label">LAP</span>
-          <span className="debug-val">{hud.lap}/{totalLaps}</span>
-        </div>
-        <div className="debug-row">
-          <span className="debug-label">SPD</span>
-          <span className="debug-val">{hud.speed} km/h</span>
-        </div>
-        <div className="debug-row">
-          <span className="debug-label">BANK</span>
-          <span className="debug-val">{bank}</span>
-        </div>
-      </div>
-      {menuWeather === "rain" && (
-        <div className="weather-drop" aria-hidden="true">
-          {[...Array(120)].map((_, i) => (
-            <div
-              key={i}
-              className="weather-drop-line"
-              style={{
-                left: `${Math.random() * 100}vw`,
-                animationDelay: `${Math.random() * 0.8}s`,
-                animationDuration: `${0.4 + Math.random() * 0.4}s`,
-              }}
-            />
-          ))}
-        </div>
-      )}
+
+
       {loadingVisible && (
         <div className={`loading-screen ${loading ? "" : "loading-screen--out"}`}>
           <div className="loading-mark">
@@ -3102,14 +3148,6 @@ export default function KarachiRushGame() {
             <span className="speed-value">{hud.speed}</span>
             <span className="speed-unit">km/h</span>
           </div>
-
-          {/* Car label: position + speed overlay (autorush style) */}
-          {phase === "racing" && (
-            <div className="car-label">
-              <div className="cl-pos">{ordinal(hud.position)}</div>
-              <div className="cl-spd"><span>{hud.speed}</span><small>km/h</small></div>
-            </div>
-          )}
 
           <div className="hud-bottom-right">
             <div className="nitro-ring" title={`Nitro ${hud.nitro}%`}>
@@ -3268,66 +3306,6 @@ export default function KarachiRushGame() {
           --------------------------------------------------------- */}
       {phase === "menu" && (
         <div className="screen-overlay menu-overlay">
-          {/* Top Floating Wallet Bar (autorush style) */}
-          <div className="wallet-bar">
-            <div className="chip w-item pts" title="Bank balance">
-              <CoinIcon size={16} />
-              <span id="walletPts">{fmtNum(bank)}</span>
-            </div>
-            {dailyStreak > 0 && (
-              <div className="chip w-item streak" title={`Daily streak: ${dailyStreak} days`}>
-                <span>🔥 {dailyStreak}</span>
-              </div>
-            )}
-            {/* Daily challenges chip */}
-            {dailyChallenges.length > 0 && (
-              <div
-                className="chip w-item chal"
-                title={`Daily challenges: ${dailyChallenges.filter((c) => challengeCompleted[c.id]).length}/${dailyChallenges.length} completed`}
-                onClick={() => setSettingsOpen(false)}
-              >
-                <span className="chal-progress">
-                  {dailyChallenges.filter((c) => challengeCompleted[c.id]).length}/{dailyChallenges.length}
-                </span>
-                <span className="chal-icon">🎯</span>
-              </div>
-            )}
-            <div className="chip w-item streak" title="Best Lap">
-              <span>BEST {hud.bestLap ? fmtTime(hud.bestLap) : "--:--"}</span>
-            </div>
-            <button
-              type="button"
-              className="chip set-btn"
-              id="soundBtn"
-              title={soundEnabled ? "Mute audio" : "Unmute audio"}
-              aria-label={soundEnabled ? "Mute audio" : "Unmute audio"}
-              onClick={() => setSoundEnabled((v) => !v)}
-            >
-              {soundEnabled ? <SpeakerIcon size={18} /> : <SpeakerOffIcon size={18} />}
-            </button>
-            <button
-              type="button"
-              className="chip set-btn"
-              id="settingsBtn"
-              title="Settings"
-              aria-label="Settings"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <GearIcon size={18} />
-            </button>
-          </div>
-
-          {/* Audio unlock overlay — browsers block AudioContext until first gesture */}
-          {!audioUnlocked && (
-            <div className="audio-unlock" onClick={() => {
-              soundRef.current?.init();
-              setAudioUnlocked(true);
-            }}>
-              <span className="unlock-text">Tap to enable sound & music</span>
-              <span className="unlock-icon">🔊</span>
-            </div>
-          )}
-
           <aside className="rail">
             <div className="rail-head">
               <div className="bank-pill">
@@ -3335,11 +3313,6 @@ export default function KarachiRushGame() {
                 <span className="bank-value">{fmtNum(bank)}</span>
                 <span className="bank-label">BANK</span>
               </div>
-              {dailyStreak > 0 && (
-                <div className="chip w-item streak" title={`Daily streak: ${dailyStreak} days`} style={{ marginLeft: 8 }}>
-                  <span>🔥 {dailyStreak}</span>
-                </div>
-              )}
               <button
                 type="button"
                 className="rail-icon"
@@ -3356,14 +3329,6 @@ export default function KarachiRushGame() {
                 onClick={() => setSettingsOpen(true)}
               >
                 <GearIcon size={18} />
-              </button>
-              <button
-                type="button"
-                className="chip w-item"
-                style={{ marginLeft: 6, padding: "4px 10px", fontSize: "11px", fontWeight: 700, letterSpacing: "0.04em", cursor: "pointer", background: "var(--panel-2)", border: "1px solid var(--edge)", color: "var(--marigold)" }}
-                onClick={() => setMultiplayerOpen(true)}
-              >
-                {roomPin ? `PIN: ${roomPin}` : "FRIENDS"}
               </button>
             </div>
 
@@ -3427,58 +3392,15 @@ export default function KarachiRushGame() {
                   </button>
                   <div className="auto-card" id="autoCard">
                     <div className="auto-card-top">
-                      <div className="auto-name">{curVehicle.name}</div>
                       <span className={`tier tier-${curVehicle.id}`}>
                         {VEHICLE_TIERS[curVehicle.id] || "STANDARD"}
                       </span>
                     </div>
                     <div className="auto-tag">{curVehicle.subtitle}</div>
-                    <div className="stats">
-                      <span className="stat-label">TOP SPEED</span>
-                      <div className="stat-bar">
-                        <i style={{ width: `${Math.round((curVehicle.topSpeed / 50) * 100)}%` }} />
-                      </div>
-                      <span className="stat-label">ACCEL</span>
-                      <div className="stat-bar">
-                        <i style={{ width: `${Math.round((curVehicle.accel / 14) * 100)}%` }} />
-                      </div>
-                      <span className="stat-label">HANDLING</span>
-                      <div className="stat-bar">
-                        <i style={{ width: `${Math.round((curVehicle.handling / 1.2) * 100)}%` }} />
-                      </div>
-                      <span className="stat-label">NITRO</span>
-                      <div className="stat-bar">
-                        <i style={{ width: `${Math.round((curVehicle.nitroBonus / 24) * 100)}%` }} />
-                      </div>
-                    </div>
                     <div className="card-foot">
                       <span className="auto-count">
                         {VEHICLES.findIndex((v) => v.id === selectedVehicle) + 1} / {VEHICLES.length}
                       </span>
-                      {/* Upgrades (owned vehicles only) */}
-                      {unlocked.includes(curVehicle.id) && (
-                        <div className="upgrades">
-                          {UPGRADE_STATS.map((s) => {
-                            const levels = upgradeLevels[selectedVehicle] ?? {};
-                            const lvl = levels[s.id] ?? 0;
-                            const cost = upgradeCost(s.id, lvl);
-                            const maxed = lvl >= MAX_UPGRADE_LEVEL;
-                            return (
-                              <button
-                                key={s.id}
-                                type="button"
-                                className={`upg-btn ${maxed ? "maxed" : ""}`}
-                                onClick={() => !maxed && buyUpgrade(s.id)}
-                                title={`${s.label} L${lvl} — ${maxed ? "MAXED" : cost + " coins"}`}
-                              >
-                                <span className="upg-label">{s.label[0]}</span>
-                                <span className="upg-lvl">L{lvl}</span>
-                                {!maxed && <span className="upg-cost">{cost}</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
                       {curVehicle.price === 0 || unlocked.includes(curVehicle.id) ? (
                         <span className="owned-tag">EQUIPPED ✓</span>
                       ) : bank >= curVehicle.price ? (

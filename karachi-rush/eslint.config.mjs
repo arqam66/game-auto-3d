@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated hardened build output (mirrors .next, not source).
+    ".bla-hardened/**",
   ]),
 ]);
 

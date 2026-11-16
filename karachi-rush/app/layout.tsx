@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   icons: [
     { rel: "icon", type: "image/svg+xml", url: "/favicon.svg" },
     { rel: "icon", type: "image/x-icon", url: "/favicon.ico" },
-    { rel: "apple-touch-icon", url: "/favicon.svg" },
+    { rel: "apple-touch-icon", sizes: "180x180", url: "/favicon.svg" },
   ],
 };
 
@@ -48,6 +48,12 @@ export default function RootLayout({
       lang="en"
       className={`${bungee.variable} ${teko.variable}`}
     >
+      <head>
+        <script
+          src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"
+          defer
+        />
+      </head>
       <body>{children}</body>
     </html>
   );
