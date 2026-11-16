@@ -68,9 +68,11 @@ Reference target: autorush.autos (Gurugram Grand Prix) — studied via `autorush
 - `npm run build`: PASS (all 10 routes prerendered)
 - `window.__rush` debug API intact (get/start/setDifficulty/forceLap/addBank/unlockAll/warp/listCoinRows/listObstacles/cycleTimeMode/quitRace)
 
-## Remaining (deferred)
-- Multiplayer lobby (server-authoritative) — out of scope for bounded loop
-- City unlock (Gurugram/Delhi) — Karachi-only circuit, per scope
+## Remaining (deferred / out of scope per plan)
+- Multiplayer lobby (server-authoritative backend) — deferred (spec Phase 6).
+- Real-money purchases / stores — design-only (Task 8); no real-money logic in V1.
+- Native iOS/Android, UGC tracks, licensed real-brand vehicles — out of scope (spec 1.7).
+- Full string coverage for i18n (static pages, some HUD labels) — mechanism shipped; coverage can be extended.
 
 ## Completed this session (2026-11-16)
 15. **AutoRush Task 2.1 — Warden chase (police pursuit)** (`KarachiRushGame.tsx`, `globals.css`, `icons.tsx`)
@@ -122,6 +124,15 @@ Reference target: autorush.autos (Gurugram Grand Prix) — studied via `autorush
 25. **Phase B Task 9 — PWA installability + offline shell** (`public/manifest.json`, `public/sw.js`, `app/layout.tsx`)
     - `manifest.json` (name, icons, display standalone, theme color) + minimal cache-first service worker + registration in layout head; manifest/sw.js serve 200.
     - Verified: `tsc --noEmit` clean; `npm run lint` 0 errors/26 warnings; `npm run build` passes; dev server 200.
+26. **Phase C Task 10 — Final anti-slop pass** (`KarachiRushGame.tsx`, `globals.css`)
+    - Reviewed new UI (festival banner, supporter tiers, city selector, warden banner, rain streaks, language selector) against the design system; consistent tokens, no new gradients/glows/emoji beyond existing.
+    - Verified: `tsc --noEmit` clean; `npm run lint` 0 errors/26 warnings; `npm run build` passes.
+27. **Phase C Task 11 — Full verification loop**
+    - `tsc --noEmit`: clean; `npm run lint`: 0 errors/26 warnings; `npm run build`: all 11 routes prerendered (incl. /support); dev server: http://localhost:3000 -> 200; /music/racing.mp3 -> 200 (3,387,141 bytes); `window.__rush.get()` returns valid state (phase, lap, pursuit, etc.); race start verified (phase -> racing, 26 obstacles, no console errors).
+28. **Phase C Task 12 — Docs sync** (`STATE.md`)
+    - STATE.md completed-work + gaps updated to reflect all tasks 15-27; remaining-deferred list trimmed to genuinely out-of-scope items.
+29. **Phase C Task 13 — Release readiness**
+    - Committed (abe075a) and pushed to origin main (0f31c69..abe075a); changelog/README drift noted for follow-up.
 
 ## Artifacts Removed
 - `rush-game*.png` (8 screenshot files) — deleted
