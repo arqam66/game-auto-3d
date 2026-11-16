@@ -30,9 +30,7 @@ import {
   uDistanceMeters,
   mulberry32,
   STORAGE_KEYS,
-  CHALLENGE_POOL,
   generateDailyChallenges,
-  UPGRADE_STATS,
   MAX_UPGRADE_LEVEL,
   upgradeCost,
   getUpgradedStat,
@@ -279,7 +277,7 @@ export default function KarachiRushGame() {
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
 
   // ---- menu / ui state (plain React, engine reads via refs at race start)
-  const [runId, setRunId] = useState(0);
+  const [runId] = useState(0);
   const [selectedVehicle, setSelectedVehicle] = useState<string>("baba");
   const [difficultyId, setDifficultyId] = useState<string>("medium");
   const [totalLaps, setTotalLaps] = useState<number>(3);
@@ -402,8 +400,6 @@ export default function KarachiRushGame() {
   const prevNitroRef = useRef<boolean>(false);
   const playerNitroRef = useRef<number>(100);
   const fpsRef = useRef(0);
-  const frameCountRef = useRef(0);
-  const lastFrameTimeRef = useRef(0);
   // The menu TIME row doubles as the race's starting time of day. A ref is
   // needed because the engine is built once and would otherwise close over the
   // initial "day".
@@ -521,7 +517,6 @@ export default function KarachiRushGame() {
     const musicChordGain: GainNode | null = null;
     let musicHatGain: GainNode | null = null;
     let musicSnareGain: GainNode | null = null;
-    let musicStartTime = 0;
     let musicLevel = 0.8;
     let bgMusic: HTMLAudioElement | null = null;
 
@@ -618,9 +613,6 @@ export default function KarachiRushGame() {
       musicSnareGain.connect(musicGain);
 
       // --- background music (real looped track — Pixabay royalty-free CC) ---
-      musicStartTime = audioCtx.currentTime;
-
-      // Real looped music track now drives the soundtrack (replaces the synth sequencer).
       let musicDuck = 1;
 
       const bg = new Audio("/music/racing.mp3");
@@ -2448,7 +2440,6 @@ export default function KarachiRushGame() {
       // Daily challenges: sync session progress, award rewards for completed ones
       const nextProgress = { ...challengeProgress };
       const nextCompleted = { ...challengeCompleted };
-      const nextClaimed = { ...challengeClaimed };
       let challengeReward = 0;
       const newlyCompleted: string[] = [];
       const race = raceChallenge.current;
@@ -2684,7 +2675,6 @@ export default function KarachiRushGame() {
       // 3. camera
       if (isMenuIdle) {
         // Hero shot: steady three-quarter rear, no camera breathing drift
-        const t = now / 1000;
         const back = 11.5;
         const side = 5.4;
         camera.position.set(
@@ -3075,7 +3065,6 @@ export default function KarachiRushGame() {
   // night sky.
   useEffect(() => {
     if (phase === "menu") engineRef.current?.setTimeMode(menuTimeMode);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, menuTimeMode]);
 
   // =============================================================
