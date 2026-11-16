@@ -1055,6 +1055,23 @@ kbd {
   color: var(--cream-dim);
 }
 
+.police-banner {
+  position: absolute;
+  top: 15%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  border-radius: 8px;
+  background: var(--truck-red);
+  color: var(--cream);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
+
 .wrong-way {
   position: absolute;
   top: 15%;
@@ -1071,6 +1088,64 @@ kbd {
   font-weight: 600;
   letter-spacing: 0.18em;
 }
+
+/* Supporter tiers (design-only preview, no payments in V1) */
+.supporter-tiers {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+.tier-badge {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  border: 2px solid;
+}
+.tier-badge.bronze { background: #b45309; color: #fef3c7; border-color: #fbbf24; }
+.tier-badge.silver { background: #334155; color: #e2e8f0; border-color: #94a3b8; }
+.tier-badge.gold { background: #a16207; color: #fef9c3; border-color: #facc15; }
+
+/* Festival banner (shown in menu rail when a cultural event is active).
+   Colors are applied inline from FESTIVALS[].colors. */
+.festival-banner {
+  margin: 8px auto 4px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 2px solid;
+  color: var(--cream);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+.festival-banner .fest-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  opacity: 0.85;
+  margin-bottom: 1px;
+  display: block;
+}
+.festival-banner .fest-name {
+  font-family: var(--display);
+  font-size: 18px;
+  letter-spacing: 0.16em;
+  display: block;
+}
+
+/* -------------------------------------------------------------
+   MENU — live scene on the right
+   ------------------------------------------------------------- */
 
 /* countdown */
 

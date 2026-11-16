@@ -101,6 +101,76 @@ export const DISTRICTS: DistrictDef[] = [
 ];
 
 // -------------------------------------------------------------
+// CITIES — unlockable circuits (autorush style)
+// Karachi ships unlocked; Gurugram / Delhi unlocks at 5,000 coins.
+// -------------------------------------------------------------
+
+export interface CityDef {
+  id: string;
+  name: string;
+  tagline: string;
+  unlockCost: number; // coins; 0 = free / default unlocked
+  roadWidth: number;
+  daySky: number;
+  sunsetSky: number;
+  nightSky: number;
+  groundColor: number;
+  points: TrackPoint[];
+  districts: DistrictDef[];
+}
+
+// KARACHI — default circuit, unlocked from the start
+export const CITY_KARACHI: CityDef = {
+  id: "karachi",
+  name: "KARACHI",
+  tagline: "SADDAR • BURNS ROAD • SEA VIEW",
+  unlockCost: 0,
+  roadWidth: 28,
+  daySky: 0x7ec8e3,
+  sunsetSky: 0xff7043,
+  nightSky: 0x0b1026,
+  groundColor: 0x6f6046,
+  points: TRACK.points,
+  districts: DISTRICTS,
+};
+
+// GURUGRAM / DELHI — NCR circuit, unlock at 5,000 coins
+export const CITY_GURUGRAM: CityDef = {
+  id: "gurugram",
+  name: "GURUGRAM · DELHI NCR",
+  tagline: "CYBER CITY • GOLF COURSE • DWARKA EXPRESSWAY",
+  unlockCost: 5000,
+  roadWidth: 26,
+  daySky: 0x8ed1fc,
+  sunsetSky: 0xfb8500,
+  nightSky: 0x081018,
+  groundColor: 0x7a8696,
+  points: [
+    { x: 0, y: 0, z: 0 }, // start — Cyber Hub
+    { x: -70, y: 1, z: 300 },
+    { x: -220, y: 5, z: 520 }, // curve past Golf Course Road
+    { x: -430, y: 3, z: 620 }, // crest
+    { x: -620, y: -1, z: 500 },
+    { x: -560, y: 0, z: 260 },
+    { x: -400, y: 4, z: 130 }, // dip
+    { x: -240, y: 6, z: 70 }, // climb
+    { x: 80, y: 0, z: -150 }, // bend back
+    { x: 40, y: 1, z: -220 },
+  ] as TrackPoint[],
+  districts: [
+    { lap: 1, name: "CYBER CITY", band: [0.0, 0.34], tagline: "MG ROAD • LEISURE VALLEY • CYBER HUB", timeOfDay: "day" },
+    { lap: 2, name: "GOLF COURSE", band: [0.34, 0.68], tagline: "GOLF COURSE ROAD • AMBIENCE MALL • SAHARA", timeOfDay: "sunset" },
+    { lap: 3, name: "DWARKA EXPRESSWAY", band: [0.68, 1.0], tagline: "DWARKA SECTOR • EZONE • DELHI BORDER", timeOfDay: "night" },
+  ],
+};
+
+export const CITIES: CityDef[] = [CITY_KARACHI, CITY_GURUGRAM];
+
+export function cityById(id: string): CityDef {
+  return CITIES.find((c) => c.id === id) ?? CITY_KARACHI;
+}
+
+// -------------------------------------------------------------
 // RICKSHAW GARAGE (coins economy)
 // -------------------------------------------------------------
 export const VEHICLES: VehicleDef[] = [
@@ -302,8 +372,10 @@ export function uDistanceMeters(a: number, b: number, len: number): number {
 export const STORAGE_KEYS = {
   bank: "rush_bank",
   unlocked: "rush_unlocked",
+  citiesUnlocked: "rush_citiesUnlocked",
   vehicle: "rush_vehicle",
   bestLap: "rush_bestLap",
+  bestLaps: "rush_bestLaps",
   difficulty: "rush_difficulty",
   dailyLastRace: "rush_dailyLastRace",
   dailyStreak: "rush_dailyStreak",
@@ -340,6 +412,87 @@ export function getDailyChallengeSeed(): number {
   const now = new Date();
   // Seed resets at midnight local time
   return now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+}
+
+// -------------------------------------------------------------
+// FESTIVAL THEMES (autorush style cultural events)
+// Approximate solar windows; lunar festivals (Eid / Ramadan) shift yearly.
+// -------------------------------------------------------------
+
+export interface FestivalDef {
+  id: string;
+  name: string;
+  kicker: string; // small label above the name
+  tagline: string; // one-line descriptor for the banner
+  // Active window (month/day), inclusive. All months 1-12.
+  start: { month: number; day: number };
+  end: { month: number; day: number };
+  colors: {
+    primary: string; // hex — banner background
+    secondary: string; // hex — text
+    accent: string; // hex — highlight / icon
+  };
+}
+
+export const FESTIVALS: FestivalDef[] = [
+  {
+    id: "basant",
+    name: "BASANT",
+    kicker: "KITE FESTIVAL",
+    tagline: "Yellow skies · spring kite season over the city",
+    start: { month: 2, day: 10 },
+    end: { month: 2, day: 20 },
+    colors: { primary: "#FFC21A", secondary: "#14102B", accent: "#FF8A3D" },
+  },
+  {
+    id: "ramadan",
+    name: "RAMADAN",
+    kicker: "RAMADAN KAREEM",
+    tagline: "Holy month · nights of reflection",
+    start: { month: 3, day: 1 },
+    end: { month: 3, day: 30 },
+    colors: { primary: "#1E8E3E", secondary: "#FFF4DC", accent: "#FFC21A" },
+  },
+  {
+    id: "eid",
+    name: "EID",
+    kicker: "EID MUBARAK",
+    tagline: "Festival of breaking the fast",
+    start: { month: 4, day: 1 },
+    end: { month: 4, day: 4 },
+    colors: { primary: "#FF4F9A", secondary: "#FFF4DC", accent: "#FFC21A" },
+  },
+  {
+    id: "independence-day",
+    name: "INDEPENDENCE DAY",
+    kicker: "14 AUGUST",
+    tagline: "Azadi Mubarak · green and white",
+    start: { month: 8, day: 12 },
+    end: { month: 8, day: 16 },
+    colors: { primary: "#1E8E3E", secondary: "#FFFFFF", accent: "#FFC21A" },
+  },
+];
+
+// Returns the festival active on `now` (defaults to today), else null.
+export function getActiveFestival(now: Date = new Date()): FestivalDef | null {
+  const m = now.getMonth() + 1;
+  const d = now.getDate();
+  for (const f of FESTIVALS) {
+    if (f.start.month < f.end.month) {
+      if (
+        (m > f.start.month || (m === f.start.month && d >= f.start.day)) &&
+        (m < f.end.month || (m === f.end.month && d <= f.end.day))
+      ) {
+        return f;
+      }
+    } else if (
+      (m === f.start.month && d >= f.start.day) ||
+      (m === f.end.month && d <= f.end.day)
+    ) {
+      return f;
+    }
+  }
+  return null;
 }
 
 // -------------------------------------------------------------

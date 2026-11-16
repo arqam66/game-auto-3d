@@ -1,0 +1,19 @@
+{
+  "name": "Karachi Rickshaw Rush",
+  "short_name": "Karachi Rush",
+  "description": "Free in-browser 3D arcade racer. Drive Karachi's rickshaws against 7 rivals.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#14102B",
+  "theme_color": "#14102B",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

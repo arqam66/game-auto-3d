@@ -14,12 +14,20 @@ import {
   SpeakerIcon,
   SpeakerOffIcon,
   WarningIcon,
+  SirenIcon,
   GearIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
 } from "./game/icons";
 import {
-  TRACK,
+  t,
+  isRTL,
+  LANGUAGES,
+  readPersistedLang,
+  writePersistedLang,
+  type Lang,
+} from "../i18n";
+import {
   DISTRICTS,
   VEHICLES,
   RIVALS,
@@ -34,9 +42,15 @@ import {
   MAX_UPGRADE_LEVEL,
   upgradeCost,
   getUpgradedStat,
+  FESTIVALS,
+  getActiveFestival,
+  CITIES,
+  cityById,
   type VehicleDef,
   type DifficultyDef,
   type ChallengeDef,
+  type FestivalDef,
+  type CityDef,
 } from "./game/data";
 
 // =============================================================
@@ -308,12 +322,34 @@ export default function KarachiRushGame() {
   };
   const [menuTimeMode, setMenuTimeMode] = useState<TimeMode>("day");
   const [menuWeather, setMenuWeather] = useState<"clear" | "rain">("clear");
+  // Festival active today (lazy-initialized once on mount — no effect setState).
+  const [festival, setFestival] = useState<FestivalDef | null>(() => getActiveFestival());
+  // Unlocked cities — Karachi ships unlocked; Gurugram costs 5,000 coins.
+  const [citiesUnlocked, setCitiesUnlocked] = useState<string[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEYS.citiesUnlocked);
+      return raw ? JSON.parse(raw) : ["karachi"];
+    } catch { return ["karachi"]; }
+  });
+  const [selectedCity, setSelectedCity] = useState<string>("karachi");
+  // UI language (en / ur). Persisted; dir flips to RTL for Urdu.
+  const [lang, setLang] = useState<Lang>(() => readPersistedLang());
+
+  // Apply RTL/LTR + lang attribute whenever the language changes.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.dir = isRTL(lang) ? "rtl" : "ltr";
+    document.documentElement.lang = lang;
+    writePersistedLang(lang);
+  }, [lang]);
+
   const [phase, setPhase] = useState<Phase>("menu");
   const [loading, setLoading] = useState(true);
   const [loadingVisible, setLoadingVisible] = useState(true);
   const [countdownNum, setCountdownNum] = useState<number | string>(3);
   const [driftPopup, setDriftPopup] = useState<{ text: string; id: number } | null>(null);
   const [wrongWay, setWrongWay] = useState<boolean>(false);
+  const [pursuit, setPursuit] = useState<boolean>(false);
   const [audioUnlocked, setAudioUnlocked] = useState<boolean>(false);
   const [lapBanner, setLapBanner] = useState<{ district: string; tagline: string; lap: number; coins: number; traps: number; time: number } | null>(null);
   const [finalStats, setFinalStats] = useState<{
@@ -434,6 +470,7 @@ export default function KarachiRushGame() {
     playExhaustPop: () => void;
     playTireSqueal: (intensity: number) => void;
     playNitroWhoosh: () => void;
+    playSiren: (active: boolean) => void;
     duckMusic: (target: number, len: number) => void;
     setMuted: (muted: boolean) => void;
     setMusicVolume: (v: number) => void;
@@ -505,6 +542,10 @@ export default function KarachiRushGame() {
     let driftNoise: AudioBufferSourceNode | null = null;
     let driftGain: GainNode | null = null;
     let nitroGain: GainNode | null = null;
+
+    // Police pursuit siren
+    let policeSirenOsc: OscillatorNode | null = null;
+    let policeSirenGain: GainNode | null = null;
 
     // Background music voices
     const musicBass: OscillatorNode | null = null;
@@ -661,6 +702,33 @@ export default function KarachiRushGame() {
         playNitro: (a) => {
           if (!audioCtx || !nitroGain) return;
           nitroGain.gain.setTargetAtTime(a ? 0.3 : 0, audioCtx.currentTime, 0.04);
+        },
+        playSiren: (active: boolean) => {
+          if (!audioCtx) return;
+          if (active) {
+            if (policeSirenOsc) return;
+            policeSirenOsc = audioCtx.createOscillator();
+            policeSirenOsc.type = "sawtooth";
+            policeSirenOsc.frequency.setValueAtTime(650, audioCtx.currentTime);
+            policeSirenGain = audioCtx.createGain();
+            const sirenOsc = policeSirenOsc;
+            const sirenGain = policeSirenGain;
+            sirenGain.gain.setValueAtTime(0, audioCtx.currentTime);
+            sirenGain.gain.linearRampToValueAtTime(0.06, audioCtx.currentTime + 0.25);
+            sirenOsc.connect(sirenGain);
+            sirenGain.connect(sfxGain!);
+            sirenOsc.start();
+          } else {
+            if (!policeSirenOsc || !policeSirenGain) return;
+            try {
+              policeSirenGain.gain.cancelScheduledValues(audioCtx.currentTime);
+              policeSirenGain.gain.setValueAtTime(0, audioCtx.currentTime);
+              policeSirenOsc.stop(audioCtx.currentTime + 0.25);
+              policeSirenOsc.onended = () => { policeSirenOsc = null; policeSirenGain = null; };
+              policeSirenOsc = null;
+              policeSirenGain = null;
+            } catch { policeSirenOsc = null; policeSirenGain = null; }
+          }
         },
         playBeep: (high: boolean) => {
           if (!audioCtx || !sfxGain) return;
@@ -958,6 +1026,21 @@ export default function KarachiRushGame() {
     }
   }, [readBank, writeBank, readUnlocked, writeUnlocked]);
 
+  const unlockCity = useCallback((id: string) => {
+    const c = cityById(id);
+    if (!c || c.unlockCost <= 0) return;
+    if (citiesUnlocked.includes(id)) return;
+    const curBank = readBank();
+    if (curBank < c.unlockCost) return;
+    const next = [...citiesUnlocked, id];
+    try { window.localStorage.setItem(STORAGE_KEYS.citiesUnlocked, JSON.stringify(next)); } catch { /* ignore */ }
+    writeBank(curBank - c.unlockCost);
+    setBank(curBank - c.unlockCost);
+    setCitiesUnlocked(next);
+    setSelectedCity(id);
+    soundRef.current?.playCoin();
+  }, [readBank, writeBank, citiesUnlocked]);
+
   const buyUpgrade = useCallback((statId: string) => {
     const v = vehicleById(selectedVehicle);
     if (!v || v.price > 0 && !readUnlocked().includes(v.id)) return;
@@ -1053,8 +1136,11 @@ export default function KarachiRushGame() {
     let animId = 0;
     let disposed = false;
 
+    // Active circuit: Karachi ships unlocked; Gurugram unlocks at 5,000 coins.
+    const city = cityById(selectedCity);
+
     // ---- spline
-    const splinePoints = TRACK.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+    const splinePoints = city.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
     const spline = new THREE.CatmullRomCurve3(splinePoints, true, "centripetal");
     const trackLength = spline.getLength();
 
@@ -1083,7 +1169,19 @@ export default function KarachiRushGame() {
     let bestLapSec: number | null = null; // re-read from storage at each race start
     let crashTimer = 0;
     let gripLossTimer = 0;
+
+    // Rain visuals (only while racing in rain weather)
+    const RAIN_COUNT = 220;
+    let rainMesh: THREE.LineSegments | null = null;
     let isDriftingNow = false;
+    let policeActive = false;
+    interface AIPoliceInstance {
+      group: THREE.Group;
+      u: number;
+      dist: number;
+      speed: number;
+    }
+    let police: AIPoliceInstance | null = null;
     let manPhase: Phase = "menu"; // engine mirror of the React phase
 
     interface AIRivalInstance {
@@ -1595,7 +1693,7 @@ export default function KarachiRushGame() {
     // road at its lowest point and leave the crest floating. The ground sits
     // below the lowest point of the track and the road's outer edge is skirted
     // down to it, so the climb reads as an embankment instead of a ribbon.
-    const GROUND_Y = Math.min(...TRACK.points.map((p) => p.y)) - 2;
+    const GROUND_Y = Math.min(...city.points.map((p) => p.y)) - 2;
 
     function initScene() {
       if (!viewport) return;
@@ -1603,8 +1701,8 @@ export default function KarachiRushGame() {
       const height = viewport.clientHeight || 500;
 
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(TRACK.daySky);
-      scene.fog = new THREE.FogExp2(TRACK.daySky, 0.0011);
+      scene.background = new THREE.Color(city.daySky);
+      scene.fog = new THREE.FogExp2(city.daySky, 0.0011);
       camera = new THREE.PerspectiveCamera(60, width / height, 0.5, 3000);
 
       // Sky dome. scene.background can only be one flat hex, which read as a
@@ -1616,7 +1714,7 @@ export default function KarachiRushGame() {
       skyUniforms = {
         cTop: { value: new THREE.Color(0x2f6d94) },
         cMid: { value: new THREE.Color(0x6aa9c9) },
-        cBot: { value: new THREE.Color(TRACK.daySky) },
+        cBot: { value: new THREE.Color(city.daySky) },
       };
       const skyMat = new THREE.ShaderMaterial({
         uniforms: skyUniforms,
@@ -1705,7 +1803,7 @@ export default function KarachiRushGame() {
 
     function buildTrackMesh() {
       const segments = 240;
-      const roadW = TRACK.roadWidth;
+      const roadW = city.roadWidth;
       const halfW = roadW / 2;
 
       const roadPositions: number[] = [];
@@ -1873,7 +1971,7 @@ export default function KarachiRushGame() {
         // Clearance measured to the *near face*, not the centre. The old
         // `roadWidth + 16` put a 50 m deep block centred 38 m out, which reached
         // the curb and turned the whole circuit into a canyon.
-        const clearance = TRACK.roadWidth / 2 + 12 + Math.max(bw, bd) / 2;
+        const clearance = city.roadWidth / 2 + 12 + Math.max(bw, bd) / 2;
         const dist = clearance + rng() * 55;
 
         // Per-building lightness jitter. Three shared materials made every
@@ -1925,7 +2023,7 @@ export default function KarachiRushGame() {
         }
         if (i % 2 === 0) {
           const lampPost = new THREE.Mesh(lampGeo, lampMat);
-          const dk = TRACK.roadWidth / 2 + 2;
+          const dk = city.roadWidth / 2 + 2;
           lampPost.position.set(pt.x + normal.x * side * dk, GROUND_Y + 5, pt.z + normal.z * side * dk);
           scene.add(lampPost);
         }
@@ -1939,7 +2037,7 @@ export default function KarachiRushGame() {
         const u = (i / 26 + rng2() * 0.1) % 1.0;
         const { pt, normal } = splineFrame(u);
         const side = i % 2 === 0 ? 1 : -1;
-        const dist = TRACK.roadWidth * 0.6 + 260 + rng2() * 420;
+        const dist = city.roadWidth * 0.6 + 260 + rng2() * 420;
         const bw = 60 + rng2() * 80;
         const bd = 60 + rng2() * 80;
         const bh = 70 + Math.pow(rng2(), 1.5) * 180;
@@ -2028,7 +2126,7 @@ export default function KarachiRushGame() {
         const targetMeters = startMeters + (i + 0.5) * avgBase + (rng() - 0.5) * jitter;
         const u = targetMeters / trackLength;
         const kind = statics[Math.floor(rng() * statics.length)];
-        const lateral = (rng() * 2 - 1) * (TRACK.roadWidth * 0.42);
+        const lateral = (rng() * 2 - 1) * (city.roadWidth * 0.42);
         let mesh: THREE.Group;
         let obstacleSpeed = 0;
         if (kind === "tyre" || kind === "cone") {
@@ -2055,7 +2153,7 @@ export default function KarachiRushGame() {
       // coin rows
       for (let r = 0; r < OBSTACLE_TUNING.coinRowsPerLap; r++) {
         const u = ((r + 1) / (OBSTACLE_TUNING.coinRowsPerLap + 1)) % 1.0;
-        const lateral = (rng() * 2 - 1) * (TRACK.roadWidth * 0.36);
+        const lateral = (rng() * 2 - 1) * (city.roadWidth * 0.36);
         const meshes: THREE.Mesh[] = [];
         for (let c = 0; c < 3; c++) {
           const cu = (u + (c * 8) / trackLength) % 1.0;
@@ -2075,6 +2173,17 @@ export default function KarachiRushGame() {
     }
 
     function clearRaceObjects() {
+      if (police) {
+        scene.remove(police.group);
+        police.group.traverse((n) => {
+          if (n instanceof THREE.Mesh) {
+            n.geometry.dispose();
+            if (Array.isArray(n.material)) n.material.forEach((m) => m.dispose());
+            else n.material.dispose();
+          }
+        });
+        police = null;
+      }
       for (const o of obstacles) {
         scene.remove(o.mesh);
         o.mesh.traverse((n) => {
@@ -2095,12 +2204,48 @@ export default function KarachiRushGame() {
         }
       }
       coinRows.length = 0;
+      if (rainMesh) {
+        scene.remove(rainMesh);
+        rainMesh.geometry.dispose();
+        const mat = rainMesh.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else mat.dispose();
+        rainMesh = null;
+      }
+    }
+
+    // Build a light rain streak system (parented to the camera each frame).
+    // One LineSegments object reused every race; streaks fall and wrap.
+    function buildRain() {
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(RAIN_COUNT * 6);
+      for (let i = 0; i < RAIN_COUNT; i++) {
+        const i6 = i * 6;
+        positions[i6 + 0] = (Math.random() - 0.5) * 24;   // x1
+        positions[i6 + 1] = Math.random() * 6 - 1;        // y1 (top)
+        positions[i6 + 2] = (Math.random() - 0.5) * 24;   // z1
+        positions[i6 + 3] = positions[i6 + 0];            // x2
+        positions[i6 + 4] = positions[i6 + 1] - 1.8;      // y2 (below)
+        positions[i6 + 5] = positions[i6 + 2];            // z2
+      }
+      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      const material = new THREE.LineBasicMaterial({
+        color: 0xccddee,
+        transparent: true,
+        opacity: 0.28,
+      });
+      const mesh = new THREE.LineSegments(geometry, material);
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 999;
+      scene.add(mesh);
+      rainMesh = mesh;
     }
 
     // ---------------------------------------------------------
     // PLAYER + RIVALS SPAWN
     // ---------------------------------------------------------
     initScene();
+    buildRain();
 
     const playerRickshaw = createRickshawModel(vehicleDef.bodyColor, vehicleDef.canopyColor, vehicleDef.frameColor, true);
     scene.add(playerRickshaw.group);
@@ -2126,7 +2271,7 @@ export default function KarachiRushGame() {
         frontWheel: model.frontWheel,
         u: startU,
         speed: 10,
-        lateralOffset: rival.targetOffset * (TRACK.roadWidth * 0.35),
+        lateralOffset: rival.targetOffset * (city.roadWidth * 0.35),
         dist: startDist,
       });
     });
@@ -2137,7 +2282,7 @@ export default function KarachiRushGame() {
     function applyTimeMode(mode: TimeMode, weather: "clear" | "rain" = "clear") {
       if (!scene || !ambientLight || !dirLight || !headLight) return;
       if (mode === "day") {
-        scene.background = new THREE.Color(TRACK.daySky);
+        scene.background = new THREE.Color(city.daySky);
         scene.fog = new THREE.FogExp2(0xd6dde4, 0.0011);
         skyUniforms?.cTop.value.set(0x2f6fd0);
         skyUniforms?.cMid.value.set(0x7fb2ea);
@@ -2151,7 +2296,7 @@ export default function KarachiRushGame() {
         headLight.intensity = 0;
         if (renderer) renderer.toneMappingExposure = 1.25;
       } else if (mode === "sunset") {
-        scene.background = new THREE.Color(TRACK.sunsetSky);
+        scene.background = new THREE.Color(city.sunsetSky);
         scene.fog = new THREE.FogExp2(0xf2a57a, 0.0013);
         skyUniforms?.cTop.value.set(0x8a1c62);
         skyUniforms?.cMid.value.set(0xf06a3a);
@@ -2165,7 +2310,7 @@ export default function KarachiRushGame() {
         headLight.intensity = 3500;
         if (renderer) renderer.toneMappingExposure = 1.22;
       } else {
-        scene.background = new THREE.Color(TRACK.nightSky);
+        scene.background = new THREE.Color(city.nightSky);
         scene.fog = new THREE.FogExp2(0x10131b, 0.0017);
         skyUniforms?.cTop.value.set(0x04060d);
         skyUniforms?.cMid.value.set(0x0c1428);
@@ -2218,7 +2363,25 @@ export default function KarachiRushGame() {
     // =========================================================
     let countdownInterval: ReturnType<typeof setInterval> | null = null;
 
+    // Reckless-driving escalation: second crash of a run summons the warden
+    // (chase mini-boss). The warden drives the spline forward and busts the
+    // player when it closes the gap.
+    const startWardenChase = () => {
+      if (policeActive) return;
+      policeActive = true;
+      setPursuit(true);
+      const model = createRickshawModel("#161b22", "#2c3e50", "#0b1016", false, "WARDEN");
+      scene.add(model.group);
+      const startDist = (playerLap - 1) * trackLength + playerU * trackLength + 70;
+      police = { group: model.group, u: ((startDist / trackLength) % 1 + 1) % 1, dist: startDist, speed: vehicleDef.topSpeed * 0.95 * 1.9 };
+      soundRef.current?.playSiren(true);
+    };
+
     const startRaceInternal = () => {
+      // Guard: only race an unlocked city; fall back to Karachi otherwise.
+      if (!citiesUnlocked.includes(selectedCity)) {
+        setSelectedCity("karachi");
+      }
       soundRef.current?.init();
       // reset player state
       playerU = 0;
@@ -2237,14 +2400,27 @@ export default function KarachiRushGame() {
       distanceMeters = 0;
       crashTimer = 0;
       gripLossTimer = 0;
+      policeActive = false;
+      if (police) {
+        scene.remove(police.group);
+        police = null;
+      }
+      setPursuit(false);
       lapSummaries.length = 0;
       // Reset per-race challenge progress
       raceChallenge.current = { traps: 0, driftMeters: 0, coins: 0, crashes: 0 };
+      // Per-city / per-difficulty best lap (fallback to legacy single best lap).
       try {
-        const blRaw = window.localStorage.getItem(STORAGE_KEYS.bestLap);
-        bestLapSec = blRaw ? parseFloat(blRaw) || null : null;
+        const raw = window.localStorage.getItem(STORAGE_KEYS.bestLaps);
+        const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+        const key = selectedCity + ":" + difficultyRef.current.id;
+        const v = map[key];
+        bestLapSec = typeof v === "number" && Number.isFinite(v) ? v : null;
+        if (bestLapSec === null) {
+          const legacy = window.localStorage.getItem(STORAGE_KEYS.bestLap);
+          bestLapSec = legacy ? parseFloat(legacy) || null : null;
+        }
       } catch { bestLapSec = null; }
-
       clearRaceObjects();
       generateRaceObjects(difficultyRef.current);
       // Lap 1 opens on the menu's chosen TIME (default is day, as before);
@@ -2294,8 +2470,8 @@ export default function KarachiRushGame() {
         // manual live toggle: day -> sunset -> night
         const curBg = scene.background as THREE.Color | null;
         if (!curBg) return applyTimeMode("day");
-        if (curBg.getHex() === TRACK.daySky) applyTimeMode("sunset");
-        else if (curBg.getHex() === TRACK.sunsetSky) applyTimeMode("night", menuWeatherRef.current);
+        if (curBg.getHex() === city.daySky) applyTimeMode("sunset");
+        else if (curBg.getHex() === city.sunsetSky) applyTimeMode("night", menuWeatherRef.current);
         else applyTimeMode("day", menuWeatherRef.current);
       },
       setTimeMode: (m: TimeMode) => applyTimeMode(m, menuWeatherRef.current),
@@ -2328,6 +2504,7 @@ export default function KarachiRushGame() {
         steps: Math.round(distanceMeters * 1.4),
         trapsDodged,
         crashes,
+        pursuit: policeActive,
         timeMode: detectTimeMode(),
         trackLength: Math.round(trackLength),
       }),
@@ -2349,7 +2526,7 @@ export default function KarachiRushGame() {
       // test-only: teleport the player to a track fraction + lateral offset
       warp: (u: number, lateral = 0) => {
         playerU = ((u % 1) + 1) % 1;
-        const maxOff = TRACK.roadWidth * 0.45;
+        const maxOff = city.roadWidth * 0.45;
         playerLateral = Math.max(-maxOff, Math.min(maxOff, lateral));
         lapReady = true;
       },
@@ -2363,8 +2540,8 @@ export default function KarachiRushGame() {
     function detectTimeMode(): TimeMode {
       const bg = scene.background as THREE.Color | null;
       if (!bg) return "day";
-      if (bg.getHex() === TRACK.nightSky) return "night";
-      if (bg.getHex() === TRACK.sunsetSky) return "sunset";
+      if (bg.getHex() === city.nightSky) return "night";
+      if (bg.getHex() === city.sunsetSky) return "sunset";
       return "day";
     }
 
@@ -2380,7 +2557,12 @@ export default function KarachiRushGame() {
       if (!force) {
         if (!bestLapSec || lapElapsed < bestLapSec) {
           bestLapSec = lapElapsed;
-          try { window.localStorage.setItem(STORAGE_KEYS.bestLap, String(lapElapsed)); } catch { /* ignore */ }
+          try {
+            const raw = window.localStorage.getItem(STORAGE_KEYS.bestLaps);
+            const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+            map[selectedCity + ":" + difficultyRef.current.id] = lapElapsed;
+            window.localStorage.setItem(STORAGE_KEYS.bestLaps, JSON.stringify(map));
+          } catch { /* ignore */ }
         }
       }
       lapSummaries.push({
@@ -2562,6 +2744,29 @@ export default function KarachiRushGame() {
         composerRef.current?.render();
         return;
       }
+      // Gamepad input (poll each frame) — Standard gamepad layout.
+      try {
+        const gamepads = (typeof navigator !== "undefined" && navigator.getGamepads)
+          ? navigator.getGamepads()
+          : null;
+        const gp = gamepads ? (gamepads[0] ?? null) : null;
+        if (gp) {
+          const steer = gp.axes[0] ?? 0;
+          const rt = gp.buttons[7]?.value ?? 0;
+          const lt = gp.buttons[6]?.value ?? 0;
+          const nitro = !!gp.buttons[0]?.pressed;
+          const drift = !!gp.buttons[1]?.pressed;
+          const active = Math.abs(steer) > 0.15 || rt > 0.1 || lt > 0.1 || nitro || drift;
+          if (active) {
+            controlsRef.current.steer = steer;
+            controlsRef.current.throttle = rt > 0.1 ? 1 : 0;
+            controlsRef.current.brake = lt > 0.1 ? 1 : 0;
+            controlsRef.current.nitro = nitro;
+            controlsRef.current.drift = drift;
+          }
+          if (gp.buttons[9]?.pressed) engineRef.current?.togglePause();
+        }
+      } catch { /* gamepad API not supported */ }
       const ctrl = controlsRef.current;
       const diff = difficultyRef.current;
       const isRacing = manPhase === "racing";
@@ -2603,11 +2808,12 @@ export default function KarachiRushGame() {
         if (playerSpeed > 15) playerNitro = Math.min(100, playerNitro + (ctrl.drift ? 16 : 4) * dt);
       }
 
-      // 2. steering (grip loss from oil slick)
-      const gripMult = gripLossTimer > 0 ? 0.45 : 1.0;
+      // 2. steering (grip loss from oil slick + wet-road grip in rain)
+      const rainGrip = menuWeatherRef.current === "rain" ? 0.72 : 1.0;
+      const gripMult = (gripLossTimer > 0 ? 0.45 : 1.0) * rainGrip;
       const steerSpeed = (ctrl.drift ? 1.4 : 1.0) * vehicleDef.handling * (playerSpeed / 40) * gripMult;
       playerLateral += ctrl.steer * steerSpeed * 14 * dt;
-      const maxOffset = TRACK.roadWidth * 0.45;
+      const maxOffset = city.roadWidth * 0.45;
       if (Math.abs(playerLateral) > maxOffset) {
         playerLateral = Math.sign(playerLateral) * maxOffset;
         playerSpeed *= 0.96;
@@ -2742,6 +2948,24 @@ export default function KarachiRushGame() {
       }
       // The dome is huge but finite; re-centre it so it can never be escaped.
       skyDome?.position.copy(camera.position);
+      // Rain streaks: follow the camera, fall, and wrap top -> bottom.
+      const raining = isRacing && menuWeatherRef.current === "rain";
+      if (rainMesh) {
+        rainMesh.visible = raining;
+        if (raining) {
+          rainMesh.position.copy(camera.position);
+          const pos = rainMesh.geometry.attributes.position;
+          const camY = camera.position.y;
+          for (let i = 0; i < RAIN_COUNT; i++) {
+            const i6 = i * 6;
+            let y1 = pos.array[i6 + 1] - 14 * dt; // fall speed
+            if (y1 < camY - 2.5) y1 = camY + 3.5;
+            pos.array[i6 + 1] = y1;
+            pos.array[i6 + 4] = y1 - 1.8;
+          }
+          pos.needsUpdate = true;
+        }
+      }
       const targetFov = isMenuIdle ? 50 : 60 + (playerSpeed / 60) * 15 + (ctrl.nitro && playerNitro > 1 ? 8 : 0);
       camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.1);
       camera.updateProjectionMatrix();
@@ -2856,6 +3080,53 @@ export default function KarachiRushGame() {
         rival.group.lookAt(new THREE.Vector3().copy(rp).add(tangent));
         rival.frontWheel.rotation.y = 0;
       }
+
+      // 5.5 warden chase — escalated from repeated reckless crashes; the
+      // pursuer drives the same spline forward and busts the player when it
+      // closes the gap.
+      if (pursuit && isRacing && police) {
+        const policeTarget = (vehicleDef.topSpeed * 0.95 * 1.9) * 1000 / 3600;
+        police.speed = THREE.MathUtils.lerp(police.speed, policeTarget, 0.08);
+        police.dist += police.speed * dt;
+        police.u = ((police.dist / trackLength) % 1 + 1) % 1;
+        const { pt, tangent, normal } = splineFrame(police.u);
+        const pPos = new THREE.Vector3().copy(pt).addScaledVector(normal, 0);
+        police.group.position.copy(pPos);
+        police.group.lookAt(new THREE.Vector3().copy(pPos).add(tangent));
+        const policeAhead = police.dist - ((playerLap - 1) * trackLength + playerU * trackLength);
+        // Warden chase camera read: as the warden closes, the chase cam leans
+        // toward the pursuer (mini-boss feel).
+        if (policeAhead > -20 && policeAhead < 8 && cameraMode === "chase") {
+          const intensity = (8 - policeAhead) / 28;
+          camera.position.x += (Math.random() - 0.5) * intensity * 1.2;
+          camera.position.z += (Math.random() - 0.5) * intensity * 1.2;
+        }
+        if (policeAhead <= 5) {
+          policeActive = false;
+          setPursuit(false);
+          soundRef.current?.playSiren(false);
+          if (police) {
+            police.group.traverse((n) => {
+              if (n instanceof THREE.Mesh) {
+                n.geometry.dispose();
+                if (Array.isArray(n.material)) n.material.forEach((m) => m.dispose());
+                else n.material.dispose();
+              }
+            });
+          }
+          police = null;
+          crashTimer = 0.55;
+          crashes++;
+          raceChallenge.current.crashes++;
+          totalScore = Math.max(0, totalScore - 100);
+          setDriftPopup({ text: "BUSTED! −100", id: Date.now() });
+          soundRef.current?.playCrash();
+          setCrashWord("BUSTED!");
+          setCinematicShowing(true);
+          setTimeout(() => setCinematicShowing(false), 1200);
+          soundRef.current?.duckMusic(0.3, 700);
+        }
+      }
       positionRank = isRacing ? rank : positionRank;
 
       // 5. obstacles
@@ -2863,7 +3134,7 @@ export default function KarachiRushGame() {
         if (o.speed > 0) {
           o.u = (o.u + (o.speed * dt) / trackLength) % 1.0;
           const { pt, tangent, normal } = splineFrame(o.u);
-          const lat = Math.max(-TRACK.roadWidth * 0.44, Math.min(TRACK.roadWidth * 0.44, o.lateral));
+          const lat = Math.max(-city.roadWidth * 0.44, Math.min(city.roadWidth * 0.44, o.lateral));
           o.curLateral = lat;
           o.mesh.position.set(pt.x + normal.x * lat, pt.y, pt.z + normal.z * lat);
           o.mesh.lookAt(new THREE.Vector3().copy(pt).add(tangent));
@@ -2893,6 +3164,8 @@ export default function KarachiRushGame() {
               setCinematicShowing(true);
               setTimeout(() => setCinematicShowing(false), 1200);
               soundRef.current?.duckMusic(0.3, 700);
+              // Reckless driving: the second crash of a run escalates to a warden chase.
+              if (crashes >= 2) startWardenChase();
             } else if (o.kind === "breaker") {
               playerSpeed *= 0.82;
               playerNitro = Math.max(0, playerNitro - 8);
@@ -3038,7 +3311,7 @@ export default function KarachiRushGame() {
       bloomPassRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, selectedVehicle]);
+  }, [runId, selectedVehicle, selectedCity]);
 
   // keep difficulty & laps refs synced from menu selection
   useEffect(() => {
@@ -3071,6 +3344,7 @@ export default function KarachiRushGame() {
   // RENDER
   // =============================================================
   const curVehicle = vehicleById(selectedVehicle);
+  const curCity = cityById(selectedCity);
   const curDifficulty = difficultyById(difficultyId);
   const hudDistrict = DISTRICTS[Math.min(hud.lap - 1, DISTRICTS.length - 1)].name;
   const racers = RIVALS.length + 1;
@@ -3107,17 +3381,17 @@ export default function KarachiRushGame() {
               <span className="pos-total">/{racers}</span>
             </div>
             <div className="hud-row">
-              <span className="hud-k">LAP</span>
+              <span className="hud-k">{t("hud.lap", lang)}</span>
               <span className="hud-v">
                 {hud.lap}/{totalLaps}
               </span>
             </div>
             <div className="hud-row">
-              <span className="hud-k">TIME</span>
+              <span className="hud-k">{t("hud.lapTime", lang)}</span>
               <span className="hud-v">{fmtTime(hud.lapTime)}</span>
             </div>
             <div className="hud-row">
-              <span className="hud-k">BEST</span>
+              <span className="hud-k">{t("hud.bestLap", lang)}</span>
               <span className="hud-v dim">{hud.bestLap ? fmtTime(hud.bestLap) : "—"}</span>
             </div>
           </div>
@@ -3135,7 +3409,7 @@ export default function KarachiRushGame() {
 
           <div className="hud-bottom-left">
             <span className="speed-value">{hud.speed}</span>
-            <span className="speed-unit">km/h</span>
+            <span className="speed-unit">{t("garage.kmh", lang)}</span>
           </div>
 
           <div className="hud-bottom-right">
@@ -3265,10 +3539,17 @@ export default function KarachiRushGame() {
             </div>
           )}
 
+          {pursuit && (
+            <div className="police-banner">
+              <SirenIcon size={22} />
+              <span>{t("alert.wardenChase", lang)}</span>
+            </div>
+          )}
+
           {wrongWay && (
             <div className="wrong-way">
               <WarningIcon size={22} />
-              <span>WRONG WAY</span>
+              <span>{t("alert.wrongWay", lang)}</span>
             </div>
           )}
         </div>
@@ -3326,16 +3607,25 @@ export default function KarachiRushGame() {
                 1280x720 without shrinking the type. */}
             <div className="rail-body scrollable">
               <header className="brand">
-                <div className="game-title">KARACHI RICKSHAW RUSH</div>
-                <div className="game-subtitle">Karachi ki sadkon par race · SADDAR · BURNS ROAD · SEA VIEW</div>
+                <div className="game-title">{t("game.title", lang)}</div>
+                <div className="game-subtitle">{t("game.subtitle", lang)}</div>
               </header>
+
+              {/* Festival banner — shown only when a cultural event window is active */}
+              {festival && (
+                <div className="festival-banner" style={{ borderColor: festival.colors.accent, background: festival.colors.primary, color: festival.colors.secondary }}>
+                  <span className="fest-kicker">{festival.kicker}</span>
+                  <span className="fest-name">{festival.name}</span>
+                  <span style={{ fontSize: "12px", opacity: 0.85, marginTop: 2 }}>{festival.tagline}</span>
+                </div>
+              )}
 
 
 
               {/* Daily challenges (autorush style) */}
               {dailyChallenges.length > 0 && (
                 <section className="rail-group">
-                  <div className="section-label">Daily Challenges</div>
+                  <div className="section-label">{t("menu.dailyChallenges", lang)}</div>
                   {dailyChallenges.map((c) => {
                     const prog = challengeProgress[c.id] ?? 0;
                     const done = challengeCompleted[c.id];
@@ -3362,9 +3652,65 @@ export default function KarachiRushGame() {
                 </section>
               )}
 
+              {/* City circuit unlock (autorush style) */}
+              <section className="rail-group">
+                <div className="section-label">{t("garage.city", lang)}</div>
+                <div className="home-picker city-picker">
+                  <button
+                    type="button"
+                    className="arrow"
+                    aria-label="Previous city"
+                    onClick={() => {
+                      const unlocked = CITIES.filter((c) => citiesUnlocked.includes(c.id));
+                      const idx = unlocked.findIndex((c) => c.id === selectedCity);
+                      const prev = unlocked[(idx - 1 + unlocked.length) % unlocked.length];
+                      setSelectedCity(prev.id);
+                    }}
+                  >
+                    ‹
+                  </button>
+                  <div className="auto-card" id="cityCard">
+                    <div className="auto-card-top">
+                      <span className={`tier tier-${curCity.id}`}>{curCity.unlockCost > 0 ? "LOCKED CITY" : "DEFAULT"}</span>
+                    </div>
+                    <div className="auto-tag">{curCity.tagline}</div>
+                    <div className="card-foot">
+                      <span className="auto-count">
+                        {CITIES.findIndex((c) => c.id === selectedCity) + 1} / {CITIES.length}
+                      </span>
+                      {!citiesUnlocked.includes(curCity.id) ? (
+                        bank >= curCity.unlockCost ? (
+                          <button type="button" className="buy-pill-btn" onClick={() => unlockCity(curCity.id)}>
+                            <CoinIcon size={12} />
+                            {t("garage.unlockFor", lang).replace("{{price}}", fmtNum(curCity.unlockCost))}
+                          </button>
+                        ) : (
+                          <span className="lock-note">{t("garage.need", lang).replace("{{price}}", fmtNum(curCity.unlockCost))}</span>
+                        )
+                      ) : (
+                        <span className="owned-tag">{t("garage.unlocked", lang)}</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="arrow"
+                    aria-label="Next city"
+                    onClick={() => {
+                      const unlocked = CITIES.filter((c) => citiesUnlocked.includes(c.id));
+                      const idx = unlocked.findIndex((c) => c.id === selectedCity);
+                      const next = unlocked[(idx + 1) % unlocked.length];
+                      setSelectedCity(next.id);
+                    }}
+                  >
+                    ›
+                  </button>
+                </div>
+              </section>
+
               {/* Featured Auto Showcase Card with Arrow Pickers (autorush style) */}
               <section className="rail-group">
-                <div className="section-label">Selected Rickshaw</div>
+                <div className="section-label">{t("garage.selected", lang)}</div>
                 <div className="home-picker">
                   <button
                     type="button"
@@ -3391,7 +3737,7 @@ export default function KarachiRushGame() {
                         {VEHICLES.findIndex((v) => v.id === selectedVehicle) + 1} / {VEHICLES.length}
                       </span>
                       {curVehicle.price === 0 || unlocked.includes(curVehicle.id) ? (
-                        <span className="owned-tag">EQUIPPED ✓</span>
+                        <span className="owned-tag">{t("garage.equipped", lang)}</span>
                       ) : bank >= curVehicle.price ? (
                         <button
                           type="button"
@@ -3399,11 +3745,11 @@ export default function KarachiRushGame() {
                           onClick={() => buyVehicle(curVehicle.id)}
                         >
                           <CoinIcon size={12} />
-                          UNLOCK FOR {fmtNum(curVehicle.price)}
+                          {t("garage.unlockFor", lang).replace("{{price}}", fmtNum(curVehicle.price))}
                         </button>
                       ) : (
                         <span className="lock-note">
-                          🔒 NEED {fmtNum(curVehicle.price)}
+                          {t("garage.need", lang).replace("{{price}}", fmtNum(curVehicle.price))}
                         </span>
                       )}
                     </div>
@@ -3444,7 +3790,7 @@ export default function KarachiRushGame() {
                       >
                         <span className="select-card-name">{v.name}</span>
                         <span className="select-card-stats">
-                          {v.topSpeed} <em>km/h</em>
+                          {v.topSpeed} <em>{t("garage.kmh", lang)}</em>
                         </span>
                         <div className="select-card-stat-row">
                           <div className="select-card-stat">
@@ -3478,7 +3824,7 @@ export default function KarachiRushGame() {
                         <span className="select-card-tail">
                           {isOwned ? (
                             isActive ? (
-                              <span className="owned-tag">EQUIPPED</span>
+                              <span className="owned-tag">{t("garage.equipped", lang)}</span>
                             ) : null
                           ) : (
                             <span
@@ -3489,7 +3835,7 @@ export default function KarachiRushGame() {
                               }}
                             >
                               <CoinIcon size={12} />
-                              BUY {fmtNum(v.price)}
+                              {t("garage.buy", lang).replace("{{price}}", fmtNum(v.price))}
                             </span>
                           )}
                         </span>
@@ -3500,7 +3846,7 @@ export default function KarachiRushGame() {
               </section>
 
               <section className="rail-group">
-                <div className="section-label">Difficulty</div>
+                <div className="section-label">{t("menu.difficulty", lang)}</div>
                 <div className="segmented" role="group" aria-label="Difficulty">
                   {DIFFICULTIES.map((d) => (
                     <button
@@ -3518,7 +3864,7 @@ export default function KarachiRushGame() {
               </section>
 
               <section className="rail-group">
-                <div className="section-label">Laps</div>
+                <div className="section-label">{t("menu.laps", lang)}</div>
                 <div className="segmented" role="group" aria-label="Race laps">
                   {[1, 3, 5].map((laps) => (
                     <button
@@ -3535,7 +3881,7 @@ export default function KarachiRushGame() {
               </section>
 
               <section className="rail-group">
-                <div className="section-label">Time</div>
+                <div className="section-label">{t("menu.time", lang)}</div>
                 <div className="segmented" role="group" aria-label="Time of day">
                   {(["day", "sunset", "night"] as TimeMode[]).map((t) => (
                     <button
@@ -3557,7 +3903,7 @@ export default function KarachiRushGame() {
 
               {/* Weather toggle */}
               <section className="rail-group">
-                <div className="section-label">Weather</div>
+                <div className="section-label">{t("menu.weather", lang)}</div>
                 <div className="segmented" role="group" aria-label="Weather">
                   <button
                     type="button"
@@ -3586,7 +3932,7 @@ export default function KarachiRushGame() {
             </div>
 
             <button type="button" className="action-btn big-btn" id="startBtn" onClick={() => engineRef.current?.startRace()}>
-              <span>START RUSH</span>
+              <span>{t("start.rush", lang)}</span>
               <span className="cta-start">START</span>
               <span className="go-arrow" aria-hidden="true">▶</span>
             </button>
@@ -3690,7 +4036,7 @@ export default function KarachiRushGame() {
                 </span>
               </div>
 
-              <div className="section-label">Controls</div>
+              <div className="section-label">{t("menu.controls", lang)}</div>
               <dl className="keymap">
                 <dt>
                   <kbd>W</kbd>
@@ -3717,7 +4063,7 @@ export default function KarachiRushGame() {
                 <dd>Pause</dd>
               </dl>
 
-              <div className="section-label">Camera View</div>
+              <div className="section-label">{t("menu.cameraView", lang)}</div>
               <div className="segmented" role="group" aria-label="Camera view">
                 {CAM_VIEW_OPTIONS.map(([v, label]) => (
                   <button
@@ -3732,7 +4078,7 @@ export default function KarachiRushGame() {
                 ))}
               </div>
 
-              <div className="section-label">Vibration</div>
+              <div className="section-label">{t("menu.vibration", lang)}</div>
               <div className="segmented" role="group" aria-label="Vibration">
                 {VIBRATION_OPTIONS.map(([v, label]) => (
                   <button
@@ -3746,8 +4092,31 @@ export default function KarachiRushGame() {
                   </button>
                 ))}
               </div>
+              <div className="section-label">Language / زبان</div>
+              <div className="segmented" role="group" aria-label="Language">
+                {LANGUAGES.map((l) => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    className={`seg ${lang === l.id ? "is-on" : ""}`}
+                    aria-pressed={lang === l.id}
+                    onClick={() => setLang(l.id)}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+              <div className="section-label">Supporter Tiers (design only)</div>
+              <div className="supporter-tiers">
+                <span className="tier-badge bronze">BRONZE</span>
+                <span className="tier-badge silver">SILVER</span>
+                <span className="tier-badge gold">GOLD</span>
+              </div>
+              <p style={{ color: "var(--cream-dim)", fontSize: 12, margin: "6px 0 10px" }}>
+                Supporter tiers are a design preview — no payments are processed in V1.
+              </p>
               <button type="button" className="action-btn" onClick={() => setSettingsOpen(false)}>
-                DONE
+                {t("menu.done", lang)}
               </button>
             </div>
           </div>
@@ -3946,35 +4315,35 @@ export default function KarachiRushGame() {
                 <div className="stat-grid">
                   <div className="stat-box">
                     <span className="stat-num">{fmtTime(finalStats.raceTime)}</span>
-                    <span className="stat-label">Race time</span>
+                    <span className="stat-label">{t("result.raceTime", lang)}</span>
                   </div>
                   <div className="stat-box">
                     <span className="stat-num">{finalStats.bestLap ? fmtTime(finalStats.bestLap) : "—"}</span>
-                    <span className="stat-label">Best lap</span>
+                    <span className="stat-label">{t("result.bestLap", lang)}</span>
                   </div>
                   <div className="stat-box">
                     <span className="stat-num">{fmtNum(finalStats.distanceM)}m</span>
-                    <span className="stat-label">Distance</span>
+                    <span className="stat-label">{t("result.distance", lang)}</span>
                   </div>
                   <div className="stat-box">
                     <span className="stat-num">{fmtNum(finalStats.steps)}</span>
-                    <span className="stat-label">Steps</span>
+                    <span className="stat-label">{t("result.steps", lang)}</span>
                   </div>
                   <div className="stat-box">
                     <span className="stat-num">{finalStats.trapsDodged}</span>
-                    <span className="stat-label">Traps</span>
+                    <span className="stat-label">{t("result.traps", lang)}</span>
                   </div>
                   <div className="stat-box">
                     <span className="stat-num">{finalStats.crashes}</span>
-                    <span className="stat-label">Crashes</span>
+                    <span className="stat-label">{t("result.crashes", lang)}</span>
                   </div>
                   <div className="stat-box">
                     <span className="stat-num">{fmtNum(finalStats.driftScore)}</span>
-                    <span className="stat-label">Drift</span>
+                    <span className="stat-label">{t("result.drift", lang)}</span>
                   </div>
                   <div className="stat-box">
                     <span className="stat-num">{finalStats.laps.length}</span>
-                    <span className="stat-label">Laps done</span>
+                    <span className="stat-label">{t("result.lapsDone", lang)}</span>
                   </div>
                 </div>
               </div>

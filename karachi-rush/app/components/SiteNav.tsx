@@ -9,6 +9,7 @@ interface SiteNavProps {
     | "changelog"
     | "about"
     | "contact"
+    | "support"
     | "privacy"
     | "terms";
 }
@@ -61,6 +62,12 @@ export function SiteHeader({ current }: SiteNavProps) {
             Contact
           </Link>
           <Link
+            href="/support"
+            aria-current={current === "support" ? "page" : undefined}
+          >
+            Support
+          </Link>
+          <Link
             href="/privacy"
             aria-current={current === "privacy" ? "page" : undefined}
           >
@@ -89,6 +96,7 @@ export function SiteFooter() {
         <Link href="/changelog">Updates</Link>
         <Link href="/about">About</Link>
         <Link href="/contact">Contact</Link>
+        <Link href="/support">Support</Link>
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Terms</Link>
       </nav>

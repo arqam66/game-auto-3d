@@ -81,6 +81,16 @@ export function WarningIcon({ size = 20, className }: IconProps) {
   );
 }
 
+export function SirenIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M4.2 9.6h1.8l1.3-2.9h4.6l1.3 2.9h1.8" />
+      <rect x="2.5" y="13.4" width="19" height="5.4" rx="2.7" />
+      <path d="M9.2 16.3h.01M14.8 16.3h.01" />
+    </svg>
+  );
+}
+
 export function GearIcon({ size = 20, className }: IconProps) {
   // Sliders, not a cog. At 18px a cog's teeth collapse into a sun glyph, and
   // the sun already means brightness elsewhere.
