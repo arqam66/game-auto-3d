@@ -894,16 +894,12 @@ export default function KarachiRushGame() {
           }, len);
         },
         setMuted: (muted: boolean) => {
+          // Mute/unmute the master bus + music track; per-bus gains (music/sfx)
+          // keep their slider values so unmuting restores the chosen volumes.
           if (masterGain && audioCtx) {
-            masterGain.gain.setTargetAtTime(muted ? 0 : 0.7, audioCtx.currentTime, 0.05);
+            masterGain.gain.setTargetAtTime(muted ? 0 : 0.95, audioCtx.currentTime, 0.05);
           }
           if (bgMusic) bgMusic.volume = muted ? 0 : musicLevel;
-          if (musicGain && audioCtx) {
-            musicGain.gain.setTargetAtTime(muted ? 0 : 0.5, audioCtx.currentTime, 0.05);
-          }
-          if (sfxGain && audioCtx) {
-            sfxGain.gain.setTargetAtTime(muted ? 0 : 0.8, audioCtx.currentTime, 0.05);
-          }
         },
         setMusicVolume: (v: number) => {
           musicLevel = v / 100;
@@ -3982,6 +3978,18 @@ export default function KarachiRushGame() {
             </div>
 
             <div className="settings-scroll">
+              <div className="setting-row">
+                <span className="setting-k">Mute all</span>
+                <button
+                  type="button"
+                  className="vol-btn"
+                  aria-label={soundEnabled ? "Mute all sound" : "Unmute all sound"}
+                  aria-pressed={!soundEnabled}
+                  onClick={() => setSoundEnabled((v) => !v)}
+                >
+                  {soundEnabled ? <SpeakerIcon size={16} /> : <SpeakerOffIcon size={16} />}
+                </button>
+              </div>
               <div className="setting-row">
                 <span className="setting-k">Music</span>
                 <div className="volume-row">
